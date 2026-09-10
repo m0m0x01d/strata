@@ -235,11 +235,14 @@ kbd{
   border:1px solid var(--rule-2); border-radius:7px;
   background:
     linear-gradient(180deg, color-mix(in srgb,var(--raise) 96%,transparent), var(--strata));
-  box-shadow:0 26px 70px rgba(0,0,0,.42);
+  /* shadow lives on .plane.active only — 7 large soft shadows on
+     transformed layers was the single most expensive thing in the scene */
+  box-shadow:none;
+  will-change:transform;
   display:flex; flex-direction:column; overflow:hidden;
-  transition:transform .78s cubic-bezier(.22,.9,.24,1), opacity .5s ease, filter .5s ease, border-color .3s;
+  transition:transform .78s cubic-bezier(.22,.9,.24,1), opacity .5s ease, filter .5s ease, border-color .3s, visibility 0s;
 }
-.plane.active{border-color:var(--signal-deep)}
+.plane.active{border-color:var(--signal-deep); box-shadow:0 26px 70px rgba(0,0,0,.42)}
 .plane.pulse{border-color:var(--taint); box-shadow:0 0 0 1px var(--taint-edge), 0 26px 70px rgba(0,0,0,.42)}
 
 /* Drafting callouts live as siblings of the planes, not inside them: .plane
@@ -290,7 +293,7 @@ kbd{
 .phead .lc{font-family:var(--mono); font-size:10px; font-weight:700; color:var(--signal); letter-spacing:.10em}
 .phead .lt{font-family:var(--mono); font-size:11px; font-weight:600; letter-spacing:.20em; text-transform:uppercase}
 .phead .lm{margin-left:auto; font-size:10.5px; color:var(--dim); font-family:var(--mono)}
-.pbody{flex:1 1 auto; overflow:auto; padding:14px}
+.pbody{flex:1 1 auto; overflow:auto; padding:14px; overscroll-behavior:contain; contain:layout style}
 .plane:not(.active) .pbody{overflow:hidden}
 
 /* the trust-boundary plane floating in the stack */
@@ -745,7 +748,7 @@ select.labsel option{background:var(--strata); color:var(--ink)}
 }
 .bbar .bmenu{color:var(--s-muted); font-weight:700}
 
-.site{flex:1; overflow:auto; display:flex; flex-direction:column; background:var(--s-bg)}
+.site{flex:1; overflow:auto; overscroll-behavior:contain; display:flex; flex-direction:column; background:var(--s-bg)}
 .s-head{
   flex:0 0 auto; display:flex; align-items:center; gap:16px;
   padding:12px 18px; border-bottom:1px solid var(--s-line); background:var(--s-bg);
@@ -1014,6 +1017,90 @@ select.labsel option{background:var(--strata); color:var(--ink)}
 .logv .logrow{font-family:var(--mono); font-size:11.5px; color:#1b1f27; padding:5px 10px; background:#f4f6f8; border-radius:5px; margin-bottom:4px}
 .logv .logrow.dim{color:#9aa3ad; font-style:italic}
 
+/* ── OBJECTIVES (the challenge ladder in the side rail) ────── */
+.objs{padding:0 16px 12px; border-bottom:1px solid var(--rule); margin-bottom:10px;
+  display:flex; flex-direction:column; gap:7px}
+.objs h2{margin:0 0 2px; padding:0}
+.obj{display:grid; grid-template-columns:14px minmax(0,1fr) auto; gap:8px; align-items:start;
+  font-size:11.5px; position:relative}
+.obj .od{width:11px; height:11px; border:1px solid var(--rule-2); border-radius:50%;
+  margin-top:3px; background:var(--void); transition:background .2s, border-color .2s}
+.obj.done .od{background:var(--ok); border-color:var(--ok)}
+.obj.done .od::after{content:"✓"; color:var(--void); font-size:8px; font-weight:700;
+  display:grid; place-items:center; margin-top:1px}
+.obj .ol{color:var(--ice); line-height:1.45}
+.obj.done .ol{color:var(--dim)}
+.ohb{font-family:var(--mono); font-size:8.5px; font-weight:700; letter-spacing:.12em;
+  text-transform:uppercase; border:1px solid var(--rule-2); background:transparent;
+  color:var(--dim); border-radius:3px; padding:2px 7px; cursor:pointer; white-space:nowrap;
+  transition:border-color .15s, color .15s}
+.ohb:hover{border-color:var(--taint); color:var(--taint)}
+.olad{grid-column:1/-1; margin:2px 0 4px 22px; padding:7px 10px;
+  border-left:2px solid var(--taint); background:var(--taint-wash); border-radius:0 4px 4px 0;
+  font-size:11px; line-height:1.5; color:var(--ice)}
+.olad code, .orv code{color:var(--taint); font-family:var(--mono); font-size:10.5px; word-break:break-all}
+.orv{margin-top:5px}
+.orb{margin-top:6px; font-family:var(--mono); font-size:9px; font-weight:700; letter-spacing:.12em;
+  text-transform:uppercase; border:1px solid var(--taint-edge); background:var(--taint-wash);
+  color:var(--taint); border-radius:3px; padding:3px 9px; cursor:pointer}
+.orb:hover{background:var(--taint); color:var(--void)}
+
+/* ── VIRTUAL INTERCEPT (Burp-style, scoped to the lab's request) ── */
+.ixwrap{position:fixed; inset:0; z-index:80; display:grid; place-items:center;
+  background:color-mix(in srgb, var(--void) 66%, transparent); backdrop-filter:blur(2px)}
+.ixwrap[hidden]{display:none}
+.ixpanel{width:min(640px, 92vw); border-radius:10px; overflow:hidden;
+  border:1px solid var(--rule-2); background:var(--strata); box-shadow:0 34px 90px rgba(0,0,0,.55);
+  display:flex; flex-direction:column}
+.ixhead{display:flex; align-items:center; gap:10px; padding:9px 13px;
+  border-bottom:1px solid var(--rule); background:color-mix(in srgb,var(--void) 40%,transparent)}
+.ixhead .callout{color:var(--taint)}
+.ixhead .ixx{margin-left:auto; background:none; border:0; color:var(--dim); font-size:14px; cursor:pointer}
+.ixhead .ixx:hover{color:var(--ink)}
+.ixraw{margin:12px; min-height:180px; resize:vertical; font-family:var(--mono); font-size:12px;
+  line-height:1.7; color:var(--ice); background:var(--void); border:1px solid var(--rule-2);
+  border-radius:6px; padding:11px 13px; outline:none; white-space:pre; tab-size:2}
+.ixraw:focus{border-color:var(--taint); box-shadow:0 0 0 3px var(--taint-wash)}
+.ixfoot{display:flex; align-items:center; gap:12px; padding:0 13px 13px}
+.ixerr{font-family:var(--mono); font-size:10.5px; color:var(--breach); flex:1; min-width:0}
+.ixsend{padding:7px 18px; border-radius:6px; border:1px solid var(--signal-deep);
+  background:var(--signal-wash); color:var(--signal); font-family:var(--mono); font-size:11px;
+  font-weight:700; letter-spacing:.1em; text-transform:uppercase; cursor:pointer}
+.ixsend:hover{background:color-mix(in srgb,var(--signal) 18%,transparent)}
+
+/* ── TOASTS + PERF HUD ──────────────────────────────────────── */
+#toasts{position:fixed; bottom:18px; left:50%; transform:translateX(-50%); z-index:90;
+  display:flex; flex-direction:column; gap:7px; align-items:center; pointer-events:none}
+.toastmsg{padding:8px 15px; border-radius:7px; border:1px solid var(--ok);
+  background:color-mix(in srgb, var(--strata) 88%, transparent); color:var(--ok);
+  font-family:var(--mono); font-size:11px; letter-spacing:.02em;
+  box-shadow:0 14px 40px rgba(0,0,0,.4); animation:toastin .22s ease}
+@keyframes toastin{from{opacity:0; transform:translateY(8px)} to{opacity:1}}
+#perf{position:fixed; right:10px; bottom:10px; z-index:90; pointer-events:none;
+  font-family:var(--mono); font-size:10px; color:var(--dim); background:var(--void);
+  border:1px solid var(--rule); border-radius:5px; padding:4px 8px;
+  font-variant-numeric:tabular-nums}
+
+/* ── LOAD-LAB CARD + VALIDATOR MODAL ────────────────────────── */
+.labcard.addlab{border-style:dashed; align-items:flex-start; justify-content:center}
+.labcard.addlab .lc-title{color:var(--ice)}
+.labcard.addlab:hover .lc-title{color:var(--ink)}
+.labcard.addlab a{color:var(--signal); text-decoration:none}
+.labcard.addlab a:hover{text-decoration:underline}
+.modalwrap{position:fixed; inset:0; z-index:85; display:grid; place-items:center;
+  background:color-mix(in srgb, var(--void) 66%, transparent)}
+.modalwrap[hidden]{display:none}
+.modalbox{width:min(560px,92vw); max-height:76vh; overflow:auto; border-radius:10px;
+  border:1px solid var(--breach); background:var(--strata); padding:16px 18px;
+  box-shadow:0 34px 90px rgba(0,0,0,.55)}
+.modalbox h3{margin:0 0 4px; font-family:var(--mono); font-size:12px; letter-spacing:.16em;
+  text-transform:uppercase; color:var(--breach)}
+.modalbox ul{margin:8px 0 14px; padding-left:18px; color:var(--ice); font-size:12px; line-height:1.6}
+.modalbox li{font-family:var(--mono); font-size:11px; margin-bottom:4px}
+.modalbox .mok{border:1px solid var(--signal-deep); border-radius:6px; background:var(--signal-wash);
+  color:var(--signal); font-family:var(--mono); font-size:11px; font-weight:700;
+  letter-spacing:.1em; text-transform:uppercase; padding:6px 16px; cursor:pointer}
+
 /* ── RESPONSIVE ────────────────────────────────────────────── */
 @media (max-width:1180px){
   .app{grid-template-columns:184px minmax(0,1fr) 272px}
@@ -1112,6 +1199,7 @@ select.labsel option{background:var(--strata); color:var(--ink)}
 </style>
 
 <section class="home" id="home"></section>
+<div id="toasts"></div>
 
 <div id="labview" hidden>
 <div class="app">
@@ -1128,6 +1216,7 @@ select.labsel option{background:var(--strata); color:var(--ink)}
     </div>
     <div class="push">
       <span class="solve" id="solvePill"><span class="dot"></span><span id="solveTxt">Not solved</span></span>
+      <button class="pill" id="ixBtn" aria-pressed="false" title="Intercept the lab's virtual request before it fires — edit raw bytes, then send"><span class="dot"></span><span id="ixTxt">Intercept</span></button>
       <button class="pill" id="modeBtn" aria-pressed="false"><span class="dot"></span><span id="modeTxt">Cross-section</span></button>
       <button class="pill" id="themeBtn">Theme</button>
     </div>
@@ -1153,6 +1242,10 @@ select.labsel option{background:var(--strata); color:var(--ink)}
   </main>
 
   <aside class="side" aria-label="Taint trace">
+    <section class="objs" id="objs" hidden>
+      <h2 class="callout" id="objsH">Objectives</h2>
+      <div id="objList"></div>
+    </section>
     <h2 class="callout">Taint trace</h2>
     <ul class="trace" id="trace"></ul>
     <div class="verdict" id="verdict"></div>
@@ -1166,7 +1259,10 @@ select.labsel option{background:var(--strata); color:var(--ink)}
 
 <section class="notes">
   <h2>Lab notes</h2>
-  <p class="lede">STRATA turns a vulnerable app into a cross-section you fly through: seven planes stacked in depth, all rendering the same request at once. Four labs ship in this prototype — one SQL injection and three cross-site scripting — chosen so the <em>same</em> instrument teaches four different bug classes without changing its rules.</p>
+  <p class="lede">STRATA turns a vulnerable app into a cross-section you fly through: seven planes stacked in depth, all rendering the same request at once. Fourteen labs ship in this file — Foundations, the OWASP Top 10, and the injection set — and the catalog takes any number more: a lab file is a plain <code>.js</code> away (see the authoring guide). The same instrument teaches every bug class without changing its rules.</p>
+
+  <h3>These are real labs, not click-throughs</h3>
+  <p>Every lab carries <b>objectives</b> in the side rail — phases of the actual attack, from “break the literal” to “exfiltrate the table.” You complete them by making the engine say so, which means <em>typing the payload yourself</em> (or editing the raw request — more on that below). Hints reveal progressively, rung by rung, and the final rung shows the payload — but a solve earned that way is labeled. The preset that completes the final objective stays locked until you’ve solved the lab. Progress persists in your browser.</p>
 
   <h3>The one rule that makes it teach</h3>
   <p>Every byte that originated from the student is drawn in <b style="color:var(--taint)">amber</b>, at every layer, without exception. Nothing else in the interface is warm. You track your own payload from keystroke to query string to parser to DOM without being told where to look — and the moment amber stops being <em>data</em> and becomes <em>syntax</em> (SQL) or <em>markup</em> (HTML) is visible, not narrated.</p>
@@ -1188,10 +1284,13 @@ select.labsel option{background:var(--strata); color:var(--ink)}
   </ul>
 
   <h3>The engine is honest</h3>
-  <p>Under the surface, each lab runs a real analysis, not a lookup table. The XSS engine tokenizes the payload, classifies each vector by whether it auto-fires in the current rendering mode (a <code>&lt;script&gt;</code> that runs when server-reflected but not when set via <code>innerHTML</code>; a <code>javascript:</code> href that needs a click but an <code>iframe</code> src that doesn’t), and the resulting DOM tree on L6 is built by the browser’s own parser reading your bytes. The WAF scans your raw input against real regexes and highlights the matched token. Nothing actually executes — the <code>alert()</code> on the surface is a simulated dialog once the engine has proven the vector would fire. Same philosophy as the SQL lexer: real reasoning, simulated effect.</p>
+  <p>Under the surface, each lab runs a real analysis, not a lookup table. The XSS engine tokenizes the payload and distinguishes what auto-fires when server-reflected versus when written through <code>innerHTML</code>. The SQL lexer computes quote balance and comment offsets. The crypto lab runs a genuine MD5 (RFC 1321) against a wordlist hashed at load. The SSRF lab canonicalizes IPs — decimal, hex, octal-dropped, IPv6-mapped — before classifying them, so alternate spellings really do reach the metadata service. And the <b>intercept</b> toggle pauses the lab’s <em>virtual</em> request so you can edit the raw bytes Burp-style: the parser URL-decodes your edits exactly as an origin would. Nothing actually executes — the <code>alert()</code> on the surface is a simulated dialog once the engine has proven the vector would fire. Same philosophy everywhere: real reasoning, simulated effect. STRATA itself makes zero network requests.</p>
+
+  <h3>Infinite labs, humans and AI alike</h3>
+  <p>A lab is data: layers, presets, a pure <code>analyze()</code>, per-layer renderers, objectives, hints — one contract, validated and smoke-run on load. <code>STRATA.registerLab()</code> (exposed to lab files, documented in <code>docs/AUTHORING.md</code>) is the seam: drop a lab file onto the catalog to add it. That makes every workflow real — “build me a lab from this HackerOne report,” “harder XSS please,” “show me how this code gets exploited” — because the format, the validator, and the golden examples are all a person or an AI needs to author in this style.</p>
 
   <h3>What a production build needs next</h3>
-  <p>A sandboxed backend per lab so payloads aren’t enumerated and students can free-type real exploits; a lab-manifest format so labs are authored as data files rather than code (the five here already share one lab interface — <code>analyze</code>, <code>layerState</code>, <code>render</code>, <code>solved</code> — which is the seam that format would formalize); per-layer <em>defense</em> annotations that light up green when a student patches the right plane (parameterize the query, autoescape the template, write to <code>textContent</code>, add an allowlist); and saved progress. The layer engine, the taint renderer, and the cross-section are the reusable core — everything else is lab content.</p>
+  <p>A lab-manifest catalog on disk with a community index; a sandboxed backend for server-side labs (free-typed exploits against a real origin, not a simulation); per-layer <em>defense</em> annotations that light up green when a student patches the right plane — parameterize the query, escape the template, write to <code>textContent</code>; and progress sync. The layer engine, the taint renderer, the challenge system and the cross-section are the reusable core — everything else is lab content.</p>
 </section>
 </div>
 
@@ -1220,6 +1319,119 @@ const note = (kind, callout, html) =>
 /* Beginner explainer block, used by the Foundations lab. */
 const explain = (q, html) =>
   `<div class="explain"><div class="ex-q">${q}</div><div class="ex-b">${html}</div></div>`;
+
+/* ══ SHARED INFRASTRUCTURE ═══════════════════════════════════════════ */
+
+/* Small bounded memo for expensive pure string→string work (DOMParser
+   helpers). A Map, capped, because payloads repeat across re-renders. */
+function memoFn(fn, cap = 32){
+  const m = new Map();
+  return s => {
+    if (m.has(s)) return m.get(s);
+    const out = fn(s);
+    m.set(s, out);
+    if (m.size > cap) m.delete(m.keys().next().value);
+    return out;
+  };
+}
+
+function toast(msg){
+  const host = document.getElementById("toasts");
+  if (!host) return;
+  const t = document.createElement("div");
+  t.className = "toastmsg"; t.textContent = msg;
+  host.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+/* ── Real MD5 (RFC 1321) — the A02 lab hashes a real wordlist at runtime,
+   so "crack the hash" is actual math, not a lookup of three magic strings.
+   K constants are derived from sin(), exactly as specified. ───────── */
+const _md5K = Array.from({length:64}, (_, i) => Math.floor(Math.abs(Math.sin(i + 1)) * 4294967296));
+const _md5S = [].concat(
+  Array(4).fill([7,12,17,22]).flat(),
+  Array(4).fill([5,9,14,20]).flat(),
+  Array(4).fill([4,11,16,23]).flat(),
+  Array(4).fill([6,10,15,21]).flat()
+);
+function md5(str){
+  const rl = (x,c) => (x << c) | (x >>> (32 - c));
+  const au = (x,y) => { const l = (x & 0xFFFF) + (y & 0xFFFF), m = (x >> 16) + (y >> 16) + (l >> 16); return (m << 16) | (l & 0xFFFF); };
+  const bytes = [...new TextEncoder().encode(str)];
+  const blen = bytes.length;
+  bytes.push(0x80);
+  while (bytes.length % 64 !== 56) bytes.push(0);
+  const bits = blen * 8;
+  for (let i = 0; i < 4; i++) bytes.push((bits / Math.pow(256, i)) & 0xFF);
+  bytes.push(0,0,0,0);
+  let a = 0x67452301, b = 0xEFCDAB89, c = 0x98BADCFE, d = 0x10325476;
+  for (let off = 0; off < bytes.length; off += 64){
+    const M = [];
+    for (let j = 0; j < 16; j++)
+      M[j] = (bytes[off+j*4]) | (bytes[off+j*4+1] << 8) | (bytes[off+j*4+2] << 16) | (bytes[off+j*4+3] << 24);
+    let A = a, B = b, C = c, D = d;
+    for (let r = 0; r < 64; r++){
+      let f, x;
+      if (r < 16){ f = (B & C) | (~B & D); x = r; }
+      else if (r < 32){ f = (D & B) | (~D & C); x = (5*r + 1) % 16; }
+      else if (r < 48){ f = B ^ C ^ D; x = (3*r + 5) % 16; }
+      else { f = C ^ (B | ~D); x = (7*r) % 16; }
+      const t = au(rl(au(au(A, f), au(_md5K[r], M[x])), _md5S[r]), B);
+      A = D; D = C; C = B; B = t;
+    }
+    a = au(a,A); b = au(b,B); c = au(c,C); d = au(d,D);
+  }
+  const hx = n => { let s = ""; for (let i = 0; i < 4; i++) s += ((n >>> (8*i)) & 0xFF).toString(16).padStart(2,"0"); return s; };
+  return hx(a) + hx(b) + hx(c) + hx(d);
+}
+
+/* The wordlist an attacker (and this lab) uses. Hashed at load, once. */
+const WORDLIST = [...new Set([
+  "123456","password","123456789","12345678","1234567","12345","qwerty","qwerty123","abc123",
+  "000000","111111","123123","121212","654321","666666","888888","159753","1q2w3e","1qaz2wsx",
+  "qwe123","123qwe","a123456","123abc","7777777","qwertyuiop","asdfghjkl","zxcvbnm","iloveyou",
+  "monkey","dragon","sunshine","princess","football","baseball","letmein","welcome","admin",
+  "admin123","password1","p@ssw0rd","root","toor","pass","pass123","test","test123","guest",
+  "user","summer","winter","spring","autumn","chocolate","cookie","flower","angel","devil",
+  "love","secret","master","freedom","whatever","trustno1","ninja","mustang","matrix","pokemon",
+  "starwars","batman","superman","michael","jordan","jordan23","hunter2","shadow","kitten",
+  "liverpool","chelsea","arsenal","barcelona","myspace1","1q2w3e4r","1234qwer","blink182",
+  "randall","thunder","tigger","purple","ferrari","buster","soccer","harley","ranger","bubble"
+])];
+const RAINBOW = new Map(WORDLIST.map(w => [md5(w), w]));
+
+/* ── Perf HUD (dev only — add ?perf to the URL) ───────────────────── */
+const PERF = typeof location !== "undefined" && new URLSearchParams(location.search).has("perf");
+const perfEl = PERF ? Object.assign(document.createElement("div"), { id:"perf" }) : null;
+if (perfEl) document.body.appendChild(perfEl);
+const perfN = { analyze:0, paint:0, layout:0, dirty:0 };
+function perfShow(){
+  if (!perfEl) return;
+  perfEl.textContent =
+    `analyze ${perfN.analyze.toFixed(2)}ms · paint ${perfN.paint.toFixed(2)}ms · ` +
+    `layout ${perfN.layout.toFixed(2)}ms · planes pending ${perfN.dirty}`;
+}
+
+/* ── Layout tokens: read the CSS custom properties ONCE per resize,
+   not on every layout() call. ─────────────────────────────────────── */
+const TOK = { gap:190, gapx:96, fan:44, tiltx:"48deg", spinx:"-16deg", zoomx:.72 };
+function readTokens(){
+  const cs = getComputedStyle(document.documentElement);
+  TOK.gap  = parseFloat(cs.getPropertyValue("--gap"));
+  TOK.gapx = parseFloat(cs.getPropertyValue("--gapx"));
+  TOK.fan  = parseFloat(cs.getPropertyValue("--fan"));
+  TOK.tiltx = cs.getPropertyValue("--tiltx").trim() || "48deg";
+  TOK.spinx = cs.getPropertyValue("--spinx").trim() || "-16deg";
+  TOK.zoomx = parseFloat(cs.getPropertyValue("--zoomx")) || .72;
+}
+
+/* ── Persistent progress (objectives, hints used, solves) ─────────── */
+const STORE_KEY = "strata.progress.v1";
+let PROGRESS = {};
+try { PROGRESS = JSON.parse(localStorage.getItem(STORE_KEY)) || {}; } catch(_){ PROGRESS = {}; }
+function saveProg(){ try { localStorage.setItem(STORE_KEY, JSON.stringify(PROGRESS)); } catch(_){} }
+function progFor(id){ return (PROGRESS[id] ??= { steps:{}, hints:{}, solved:false, solvedWithHelp:false }); }
+function labUnlocked(lab){ const p = PROGRESS[lab.id]; return !!(p && (p.solved || p.solvedWithHelp)); }
 
 /* ══ SHARED TAINT RENDERERS ═════════════════════════════════════════ */
 /* Amber marks the student's bytes at every depth. Two intensities:
@@ -1340,7 +1552,7 @@ function wafScan(payload){
 /* Real DOM structure via the browser's own parser (browser-only; guarded so
    node can import the pure functions above). The payload is parsed into a
    DETACHED document and only read — never attached, so nothing executes. */
-function buildDomTree(contextHtml, hostSel){
+function buildDomTreeRaw(contextHtml, hostSel){
   if (typeof DOMParser === "undefined") return "";
   const doc = new DOMParser().parseFromString(`<!doctype html><body>${contextHtml}`, "text/html");
   const host = doc.querySelector(hostSel) || doc.body;
@@ -1373,6 +1585,16 @@ function buildDomTree(contextHtml, hostSel){
     return items ? `<ul>${items}</ul>` : "";
   };
   return `<div class="tree">${render(host)}</div>`;
+}
+/* Parsing the same payload twice is wasted work — cache by input. */
+const _domTreeCache = new Map();
+function buildDomTree(contextHtml, hostSel){
+  const key = contextHtml + "\u0000" + hostSel + "\u0000" + (typeof window !== "undefined" ? window.__mode : "");
+  if (_domTreeCache.has(key)) return _domTreeCache.get(key);
+  const out = buildDomTreeRaw(contextHtml, hostSel);
+  _domTreeCache.set(key, out);
+  if (_domTreeCache.size > 40) _domTreeCache.delete(_domTreeCache.keys().next().value);
+  return out;
 }
 
 /* Intended (what the developer pictured: your bytes shown as text) vs
@@ -1428,9 +1650,9 @@ const PRODUCTS = [
   {id:6, name:"Skyward Gimbal Mk II",      price:640.00,  released:0}
 ];
 const USERS = [
-  {id:1, email:"admin@aperture.lab",    password:"5f4dcc3b5aa765d6"},
-  {id:2, email:"r.okafor@aperture.lab", password:"e99a18c428cb38d5"},
-  {id:3, email:"j.lindqvist@aperture.lab", password:"25d55ad283aa400a"}
+  {id:1, email:"admin@aperture.lab",    password:md5("password")},
+  {id:2, email:"r.okafor@aperture.lab", password:md5("abc123")},
+  {id:3, email:"j.lindqvist@aperture.lab", password:md5("12345678")}
 ];
 const TPL_A = "SELECT id, name, price FROM products WHERE name LIKE '%";
 const TPL_B = "%' AND released = 1";
@@ -1513,7 +1735,22 @@ const LAB_SQLI = {
   defaultQ:"lens",
   presets:[ {q:"lens",label:"Benign search"}, {q:"'",label:"Break the literal"},
             {q:"' OR 1=1--",label:"Tautology"},
-            {q:"' UNION SELECT id,email,password FROM users--",label:"Exfiltrate users"} ],
+            {q:"' UNION SELECT id,email,password FROM users--",label:"Exfiltrate users", spoiler:true} ],
+  wire:{ type:"query", path:"/api/search", param:"q" },
+  challenge:{ steps:[
+    { id:"break", label:"Break the SQL string literal", test:a => !!a.error,
+      hints:["One quote closes the literal the developer opened — fly to L5 and watch the lexer's quote balance.",
+             "Type a single ' and fire."],
+      reveal:"'" },
+    { id:"withheld", label:"Read products that aren't released", test:a => !a.error && a.rows.some(p => !p.released),
+      hints:["The released = 1 check sits AFTER your bytes in the query — L5 shows what could sever it.",
+             "OR makes the WHERE true for every row; -- comments out whatever follows."],
+      reveal:"' OR 1=1--" },
+    { id:"leak", label:"Exfiltrate the users table", test:a => a.leaked.length > 0,
+      hints:["The result set can carry a second query — one whose columns line up.",
+             "UNION SELECT appends rows from another table; users has id, email, password."],
+      reveal:"' UNION SELECT id,email,password FROM users--" }
+  ]},
   analyze: sqliAnalyze,
   solved: a => a.leaked.length > 0,
   layerState(i, a){
@@ -1648,7 +1885,7 @@ const HOST = "shop.strata.lab";
    never loads. Benign markup like <b> really renders; the alert() dialog is
    the visible effect of anything that executes. Nothing runs or fetches. */
 const SAFE_TAGS = new Set(["B","I","U","EM","STRONG","SPAN","MARK","SMALL","CODE","BR","P","A","H2","H3","UL","OL","LI"]);
-function safeRender(frag){
+function safeRenderRaw(frag){
   if (typeof DOMParser === "undefined") return esc(frag);
   const doc = new DOMParser().parseFromString(`<!doctype html><body><div id="r">${frag}</div>`, "text/html");
   const walk = node => {
@@ -1668,6 +1905,14 @@ function safeRender(frag){
     return out;
   };
   return walk(doc.getElementById("r"));
+}
+const _safeCache = new Map();
+function safeRender(frag){
+  if (_safeCache.has(frag)) return _safeCache.get(frag);
+  const out = safeRenderRaw(frag);
+  _safeCache.set(frag, out);
+  if (_safeCache.size > 40) _safeCache.delete(_safeCache.keys().next().value);
+  return out;
 }
 
 /* The storefront chrome shared by every lab's L0: a browser window with an
@@ -1724,8 +1969,19 @@ const LAB_REFLECTED = {
   defaultQ:"gift ideas",
   presets:[ {q:"gift ideas",label:"Benign search"},
             {q:"<b>hi</b>",label:"Reflected as markup"},
-            {q:"<script>alert(document.domain)<\/script>",label:"Script injection"},
-            {q:"<img src=x onerror=alert(1)>",label:"Handler injection"} ],
+            {q:"<script>alert(document.domain)<\/script>",label:"Script injection", spoiler:true},
+            {q:"<img src=x onerror=alert(1)>",label:"Handler injection", spoiler:true} ],
+  wire:{ type:"query", path:"/search", param:"q" },
+  challenge:{ steps:[
+    { id:"markup", label:"Get your tags parsed as markup", test:a => a.hasMarkup,
+      hints:["Any tag will do — compare Intended vs Parsed on L6.",
+             "Angle brackets are all the tokenizer needs."],
+      reveal:"<b>hi</b>" },
+    { id:"exec", label:"Make the browser execute alert()", test:a => a.fires,
+      hints:["This page is parsed at load, so a bare script element runs.",
+             "Or use an element that fails to load and raises onerror."],
+      reveal:"<script>alert(1)<\/script>" }
+  ]},
   analyze(q){
     const vectors = scanVectors(q, "parser");
     const fires = vectors.some(v => v.fires);
@@ -1813,8 +2069,23 @@ const LAB_DOM = {
   defaultQ:"Gift ideas",
   presets:[ {q:"Gift ideas",label:"Benign fragment"},
             {q:"<script>alert(1)<\/script>",label:"The <script> trap"},
-            {q:"<img src=x onerror=alert(1)>",label:"Self-firing handler"},
-            {q:"<svg onload=alert(1)>",label:"SVG onload"} ],
+            {q:"<img src=x onerror=alert(1)>",label:"Self-firing handler", spoiler:true},
+            {q:"<svg onload=alert(1)>",label:"SVG onload", spoiler:true} ],
+  wire:{ type:"fragment" },   // the lesson: there IS no request to intercept
+  challenge:{ steps:[
+    { id:"markup", label:"Plant markup in the URL fragment", test:a => a.hasMarkup,
+      hints:["The fragment feeds a sink on L1 — that flow is the whole bug.",
+             "Any tag parses; execution is the next problem."],
+      reveal:"<b>x</b>" },
+    { id:"trap", label:"Discover the innerHTML trap", test:a => a.scriptOnly,
+      hints:["Try the obvious thing first — a script element.",
+             "L6 builds the node… and marks it inert. Watch the badge."],
+      reveal:"<script>alert(1)<\/script>" },
+    { id:"exec", label:"Fire without <script>", test:a => a.fires,
+      hints:["innerHTML never executes script nodes — you need an event handler that fires itself.",
+             "An image that fails to load raises onerror."],
+      reveal:"<img src=x onerror=alert(1)>" }
+  ]},
   analyze(q){
     const vectors = scanVectors(q, "innerHTML");
     const fires = vectors.some(v => v.fires);
@@ -1914,7 +2185,22 @@ const LAB_WAF = {
   presets:[ {q:"<script>alert(1)<\/script>",label:"Blocked · script"},
             {q:"<img src=x onerror=alert(1)>",label:"Blocked · onerror"},
             {q:"<SCRIPT>alert(1)<\/SCRIPT>",label:"Blocked · case trick"},
-            {q:"<svg onload=alert(1)>",label:"Bypass · svg onload"} ],
+            {q:"<svg onload=alert(1)>",label:"Bypass · svg onload", spoiler:true} ],
+  wire:{ type:"query", path:"/search", param:"q" },
+  challenge:{ steps:[
+    { id:"blocked", label:"Get blocked at least once", test:a => a.waf.blocked,
+      hints:["Send the classic payload — the blocklist deserves to be seen first.",
+             "L3 renders the exact regexes. <script> is rule #1."],
+      reveal:"<script>alert(1)<\/script>" },
+    { id:"through", label:"Slip past the blocklist", test:a => !a.waf.blocked && a.hasMarkup,
+      hints:["Only three strings are banned — L3 shows exactly which.",
+             "The HTML parser accepts tags the list was never told about."],
+      reveal:"<svg onload=alert(1)>" },
+    { id:"exec", label:"Fire alert() past the edge", test:a => a.fires,
+      hints:["You need a tag+handler that runs with no click.",
+             "onload fires on <svg> the moment it's built."],
+      reveal:"<svg onload=alert(1)>" }
+  ]},
   analyze(q){
     const waf = wafScan(q);
     const vectors = waf.blocked ? [] : scanVectors(q, "parser");
@@ -2152,6 +2438,11 @@ function field(label, value, btn, ph){
     <button class="s-go" type="submit">${esc(btn)}</button></form>`;
 }
 const b64url = s => btoa(unescape(encodeURIComponent(s))).replace(/=+$/,"").replace(/\+/g,"-").replace(/\//g,"_");
+const b64urlDec = s => {
+  s = String(s).replace(/-/g,"+").replace(/_/g,"/");
+  while (s.length % 4) s += "=";
+  return new TextDecoder().decode(Uint8Array.from(atob(s), c => c.charCodeAt(0)));
+};
 
 /* ── A01 · BROKEN ACCESS CONTROL (IDOR) ─────────────────────────────── */
 const ACCOUNTS = [
@@ -2171,7 +2462,18 @@ const LAB_IDOR = {
   boundary:4, boundaryLabel:"Authorization", boundaryTone:"breach",
   consoleLabel:"Account IDs", defaultQ:"1001",
   presets:[ {q:"1001",label:"Your account"},{q:"1002",label:"Another user"},
-            {q:"1000",label:"The admin"},{q:"1003",label:"No such account"} ],
+            {q:"1000",label:"The admin", spoiler:true},{q:"1003",label:"No such account"} ],
+  wire:{ type:"query", path:"/api/account", param:"id" },
+  challenge:{ steps:[
+    { id:"neighbor", label:"Read an account that isn't yours", test:a => !!a.acct && !a.yours,
+      hints:["The id in the URL is just a number you can change — L2.",
+             "You are #1001. User rows are numbered; try the neighbour."],
+      reveal:"1002" },
+    { id:"admin", label:"Read the admin's private data", test:a => a.acct?.owner === "admin",
+      hints:["admin's row sits at the top of the account range.",
+             "Account #1000."],
+      reveal:"1000" }
+  ]},
   analyze(q){
     const id = parseInt(String(q).replace(/\D/g,""), 10);
     const acct = ACCOUNTS.find(a => a.id === id) || null;
@@ -2250,13 +2552,16 @@ const LAB_IDOR = {
   }
 };
 
-/* ── A02 · CRYPTOGRAPHIC FAILURES (unsalted MD5) ────────────────────── */
-const CRACK = { "5f4dcc3b5aa765d6":"password", "e99a18c428cb38d5":"abc123", "25d55ad283aa400a":"12345678" };
+/* ── A02 · CRYPTOGRAPHIC FAILURES (unsalted MD5) ──────────────────────
+   The rainbow table here is real: md5() above is a genuine RFC-1321
+   implementation and RAINBOW is hashed from a live wordlist at load.
+   Any word in the list cracks — including ones the presets never show. */
+const HASH_ADMIN = md5("password");
 const HASHED = [
-  {email:"admin@aperture.lab",    hash:"5f4dcc3b5aa765d6", algo:"md5"},
-  {email:"r.okafor@aperture.lab", hash:"e99a18c428cb38d5", algo:"md5"},
-  {email:"j.lindqvist@aperture.lab", hash:"25d55ad283aa400a", algo:"md5"},
-  {email:"s.mbeki@aperture.lab",  hash:"$2b$12$Rk9c…saltysaltysalty", algo:"bcrypt"}
+  {email:"admin@aperture.lab",       hash:HASH_ADMIN, algo:"md5"},
+  {email:"r.okafor@aperture.lab",    hash:md5("abc123"), algo:"md5"},
+  {email:"j.lindqvist@aperture.lab", hash:md5("12345678"), algo:"md5"},
+  {email:"s.mbeki@aperture.lab",     hash:"$2b$12$Rk9c…saltysaltysalty", algo:"bcrypt"}
 ];
 const LAB_CRYPTO = {
   id:"crypto", code:"A02", cat:"Cryptographic Failures", title:"Passwords stored as unsalted MD5",
@@ -2267,15 +2572,33 @@ const LAB_CRYPTO = {
            {code:"L4",title:"Server",meta:"how it hashes"},{code:"L5",title:"Crypto",meta:"the weakness"},
            {code:"L6",title:"Data",meta:"users"} ],
   boundary:4, boundaryLabel:"Hashing", boundaryTone:"breach",
-  consoleLabel:"Stolen hashes", defaultQ:"5f4dcc3b5aa765d6",
-  presets:[ {q:"5f4dcc3b5aa765d6",label:"admin"},{q:"e99a18c428cb38d5",label:"r.okafor"},
-            {q:"25d55ad283aa400a",label:"j.lindqvist"},{q:"$2b$12$Rk9c…saltysaltysalty",label:"s.mbeki (bcrypt)"} ],
+  consoleLabel:"Stolen hashes", defaultQ: md5("abc123"),
+  presets:[ {q:HASH_ADMIN,label:"admin", spoiler:true},
+            {q:md5("abc123"),label:"r.okafor"},
+            {q:md5("12345678"),label:"j.lindqvist"},
+            {q:"$2b$12$Rk9c…saltysaltysalty",label:"s.mbeki (bcrypt)"} ],
+  wire:{ type:"offline" },   // the whole point: cracking never touches the app
+  challenge:{ steps:[
+    { id:"resist", label:"See bcrypt resist", test:a => a.bcrypt,
+      hints:["Not every row falls — feed it the one hash in the table that isn't md5.",
+             "$2b$… is bcrypt: salted, and deliberately slow."],
+      reveal:"$2b$12$Rk9c…saltysaltysalty" },
+    { id:"crack", label:"Crack the admin's md5", test:a => a.who?.email === "admin@aperture.lab" && !!a.plain,
+      hints:["A rainbow table is just a precomputed wordlist — common words fall first.",
+             "The admin used the most common password in the world."],
+      reveal:HASH_ADMIN }
+  ]},
   analyze(q){
     const hash = String(q).trim();
-    const plain = CRACK[hash] || null;
+    const isMd5 = /^[a-f0-9]{32}$/i.test(hash);
+    const plain = isMd5 ? (RAINBOW.get(hash.toLowerCase()) || null) : null;
     const bcrypt = /^\$2[aby]\$/.test(hash);
-    const who = HASHED.find(h => h.hash === hash) || null;
-    return { hash, plain, bcrypt, who, solved: plain === "password" };
+    const pwMode = (!isMd5 && !bcrypt && hash !== "") ? hash : null;   // typed a word, not a hash
+    const myHash = pwMode ? md5(pwMode) : null;
+    const who = HASHED.find(h => h.hash === hash.toLowerCase()) || null;
+    return { hash, plain, bcrypt, who, pwMode, myHash,
+             inList: pwMode ? RAINBOW.has(myHash) : false,
+             solved: !!(who && who.email === "admin@aperture.lab" && plain) };
   },
   solved: a => a.solved,
   layerState(i){ return ["present","present","present","present","present","present","present"][i]; },
@@ -2285,7 +2608,8 @@ const LAB_CRYPTO = {
       let out;
       if (a.plain) out = `<div class="cracked">🔓 <b>${esc(a.hash)}</b> → <span class="plain">${esc(a.plain)}</span> — cracked instantly from a rainbow table.</div>`;
       else if (a.bcrypt) out = `<div class="ownerok">This one is bcrypt (salted, slow). A rainbow table can’t touch it — nothing to look up.</div>`;
-      else out = `<div class="s-empty">Not in the wordlist. Paste one of the md5 hashes below.</div>`;
+      else if (a.pwMode) out = `<div class="loginerr">You typed a word, not a hash. <b>${esc(a.pwMode)}</b> hashes to <span class="mono">${esc(a.myHash)}</span> — ${a.inList ? "<b>it's in the wordlist</b>, so it falls the moment the table leaks" : "not in this wordlist (a bigger one might still catch it)"}.</div>`;
+      else out = `<div class="s-empty">Not in the wordlist — this md5 has no matching word. Paste one of the hashes below.</div>`;
       const body = `<h1 class="s-h">Password audit</h1>
         <p class="s-sub">leaked from the users table · testing hashes against a public rainbow table</p>
         <table class="db"><caption>dumped credentials</caption><tr><th>email</th><th>password hash</th><th>algo</th></tr>${rows}</table>
@@ -2313,7 +2637,7 @@ const LAB_CRYPTO = {
             ["Recovered password", a.plain ? `<b class="plain">${esc(a.plain)}</b>` : "—", a.plain?"bad":""]]),
     6: a => {
       const rows = HASHED.map(h => {
-        const p = CRACK[h.hash];
+        const p = RAINBOW.get(h.hash);
         return `<tr class="${a.who && a.who.email===h.email ? "got":"locked"}"><td>${esc(h.email)}</td><td class="mono">${esc(h.hash)}</td><td>${p?`<span class="plain">${esc(p)}</span>`:"—"}</td></tr>`;
       }).join("");
       return `<table class="db"><caption>users · hashes and what they reverse to</caption>
@@ -2351,7 +2675,18 @@ const LAB_DESIGN = {
   boundary:4, boundaryLabel:"Server-authoritative", boundaryTone:"breach",
   consoleLabel:"Prices to send", defaultQ:"1140.00",
   presets:[ {q:"1140.00",label:"Honest price"},{q:"1.00",label:"One dollar"},
-            {q:"0.00",label:"Free"},{q:"-100.00",label:"Get a refund"} ],
+            {q:"0.00",label:"Free", spoiler:true},{q:"-100.00",label:"Get a refund", spoiler:true} ],
+  wire:{ type:"json", path:"/checkout", param:"price" },
+  challenge:{ steps:[
+    { id:"discount", label:"Buy it for less than list price", test:a => a.charged < BUY.listPrice && a.charged >= 0,
+      hints:["The price travels with YOUR request — look at L2.",
+             "Nothing validates the number. Send a smaller one."],
+      reveal:"1.00" },
+    { id:"refund", label:"Make the store pay YOU", test:a => a.charged < 0,
+      hints:["The check you bypassed was a value check — but what about the sign?",
+             "Negative numbers are perfectly valid JSON."],
+      reveal:"-100.00" }
+  ]},
   analyze(q){
     const price = parseFloat(String(q).replace(/[^0-9.\-]/g,""));
     const charged = isNaN(price) ? BUY.listPrice : price;
@@ -2419,15 +2754,31 @@ const LAB_DESIGN = {
   }
 };
 
-/* ── A05 · SECURITY MISCONFIGURATION (exposed files) ────────────────── */
+/* ── A05 · SECURITY MISCONFIGURATION (exposed files) ──────────────────
+   A tiny virtual filesystem with real path normalization: ../ segments
+   resolve exactly as a web server would resolve them before opening the
+   file — so traversal spellings reach the same dotfiles. */
 const SERVED = {
   "/.env": {kind:"secrets", body:
     `DATABASE_URL=postgres://aperture:S3cr3t!@db.internal:5432/shop\nSECRET_KEY=8f14e45fceea167a5a36dedd4bea2543\nSTRIPE_SECRET=sk_live_9f2c4b71a0d3e8\nAWS_ACCESS_KEY_ID=AKIA4NEXAMPLE7\nAWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCY`},
   "/backup.sql": {kind:"dump", body:
-    `-- pg_dump aperture 2026-07-14\nINSERT INTO users VALUES (1,'admin@aperture.lab','5f4dcc3b5aa765d6');\nINSERT INTO users VALUES (2,'r.okafor@aperture.lab','e99a18c428cb38d5');`},
+    `-- pg_dump aperture 2026-07-14\nINSERT INTO users VALUES (1,'admin@aperture.lab','${md5("password")}');\nINSERT INTO users VALUES (2,'r.okafor@aperture.lab','${md5("abc123")}');`},
   "/.git/config": {kind:"source", body:
-    `[remote "origin"]\n  url = https://ci-bot:glpat-6Qx…@git.aperture.lab/shop.git`}
+    `[remote "origin"]\n  url = https://ci-bot:glpat-6Qx…@git.aperture.lab/shop.git`},
+  "/.git/HEAD": {kind:"source", body:
+    `ref: refs/heads/main`}
 };
+function normalizePath(p){
+  let s = String(p || "/").split("?")[0];
+  if (!s.startsWith("/")) s = "/" + s;
+  const out = [];
+  for (const seg of s.split("/")){
+    if (seg === "" || seg === ".") continue;
+    if (seg === ".."){ out.pop(); continue; }
+    out.push(seg);
+  }
+  return "/" + out.join("/");
+}
 const LAB_MISCONFIG = {
   id:"misconfig", code:"A05", cat:"Security Misconfiguration", title:"Config and backup files served to the world",
   difficulty:"Apprentice",
@@ -2437,34 +2788,50 @@ const LAB_MISCONFIG = {
            {code:"L4",title:"Server",meta:"static config"},{code:"L5",title:"Config",meta:"the setting"},
            {code:"L6",title:"Data",meta:"the file"} ],
   boundary:3, boundaryLabel:"Web root", boundaryTone:"breach",
+  wire:{ type:"path" },
   consoleLabel:"Paths to try", defaultQ:"/",
-  presets:[ {q:"/",label:"The app"},{q:"/.env",label:"Secrets"},
-            {q:"/backup.sql",label:"DB dump"},{q:"/.git/config",label:"Source repo"} ],
+  presets:[ {q:"/",label:"The app"},{q:"/index.html",label:"A guess (404)"},
+            {q:"/backup.sql",label:"DB dump", spoiler:true},{q:"/.env",label:"Secrets", spoiler:true} ],
+  challenge:{ steps:[
+    { id:"any", label:"Retrieve a file that shouldn’t be public", test:a => !!a.file,
+      hints:["Backups, dotfiles and VCS directories live right beside the code in the web root.",
+             "A database backup is one URL away — what would it be called?"],
+      reveal:"/backup.sql" },
+    { id:"env", label:"Read the live secrets", test:a => a.file?.kind === "secrets",
+      hints:["Twelve little letters, one leading dot.",
+             "The config file every framework reads: /.env"],
+      reveal:"/.env" },
+    { id:"traverse", label:"Reach .env through a traversal", test:a => a.file?.kind === "secrets" && a.traversed,
+      hints:["The server resolves ../ segments before opening the file — spell the target differently.",
+             "Wrap it: /static/../.env"],
+      reveal:"/static/../.env" }
+  ]},
   analyze(q){
-    const path = String(q).trim() || "/";
+    const raw = String(q).trim() || "/";
+    const path = normalizePath(raw);
     const file = SERVED[path] || null;
-    return { path, file, solved: !!file };
+    return { raw, path, traversed: path !== raw.split("?")[0], file, solved: !!file };
   },
   solved: a => a.solved,
   layerState(i, a){ return ["present","present","present", a.solved?"boundary":"present","present","present", a.solved?"present":"present"][i]; },
   render:{
     0: a => {
       let panel;
-      if (a.path === "/") panel = `<div class="ownerok">The normal storefront loads. Now try a path that shouldn’t be reachable.</div>`;
-      else if (a.file) panel = `<div class="ownerbad">⚠ The server returned <b>${esc(a.path)}</b> as a plain file — this should never be downloadable.</div>
+      if (a.raw === "/" && a.path === "/") panel = `<div class="ownerok">The normal storefront loads. Now try a path that shouldn’t be reachable.</div>`;
+      else if (a.file) panel = `<div class="ownerbad">⚠ You asked for <b>${esc(a.raw)}</b>; the server resolved it${a.traversed ? ` (normalizing the ../ segments) ` : " "} to <b>${esc(a.path)}</b> and returned it as a plain file — this should never be downloadable.</div>
         <pre class="leakfile">${esc(a.file.body)}</pre>`;
-      else panel = `<div class="s-empty">404 · ${esc(a.path)} not found.</div>`;
+      else panel = `<div class="s-empty">404 · ${esc(a.raw)} not found.</div>`;
       const body = `<div class="urlbar" style="margin-bottom:14px"><span class="scheme"><span class="lockx">🔒</span>https</span>
         <span class="path">shop.aperture.lab</span>
-        <input class="s-q pathinput" data-live data-run-inline spellcheck="false" value="${esc(a.path)}"></div>
-        ${field("", a.path, "Fetch", "/.env")}
+        <input class="s-q pathinput" data-live data-run-inline spellcheck="false" value="${esc(a.raw)}"></div>
+        ${field("", a.raw, "Fetch", "/.env")}
         <div style="margin-top:6px">${panel}</div>`;
-      return `<div class="applayer">${siteFrame({ path:esc(a.path), search:false, body })}</div>`;
+      return `<div class="applayer">${siteFrame({ path:esc(a.raw), search:false, body })}</div>`;
     },
     1: a => explain("No exploit code — just a URL",
         "This isn’t injection or clever payloads. You are simply <b>asking for a file</b> that the server was accidentally configured to hand out. Directory listings, <code>.env</code>, <code>.git</code>, database backups — all reachable because a setting was wrong."),
     2: a => `<pre class="src">${codeLines([
-        {t:`<span class="kw">GET</span> ${taint(esc(a.path))} <span class="kw">HTTP/1.1</span>`, hot:true},
+        {t:`<span class="kw">GET</span> ${taint(esc(a.raw))} <span class="kw">HTTP/1.1</span>`, hot:true},
         {t:`<span class="kw">Host:</span> shop.aperture.lab`}
       ])}</pre>${note("","Layer 2 · an ordinary GET","Nothing malicious in the request. The problem is entirely on the server’s side — what it agrees to serve.")}`,
     3: a => `<pre class="src">${codeLines([
@@ -2482,7 +2849,8 @@ const LAB_MISCONFIG = {
       ])}${note("warn","Layer 4 · dev settings in prod","Security misconfiguration is rarely one dramatic hole — it’s defaults left on: debug mode, sample accounts, permissive CORS, an admin console with no password. Each is a door someone forgot to lock.")}`,
     5: a => explain("One flag, whole classes of leak",
         "Misconfiguration is the category of “it works, so we shipped it.” The app runs fine with <code>DEBUG=True</code> and a wide-open web root — nothing breaks in testing. What breaks is confidentiality, quietly, the first time someone guesses <code>/.env</code>.")
-      + kv([["Requested", esc(a.path), ""],
+      + kv([["Requested", esc(a.raw), ""],
+            ["Resolved to", esc(a.path), a.traversed && a.file ? "leak" : ""],
             ["Server’s answer", a.file ? "the raw file" : (a.path==="/"?"the app":"404"), a.solved?"leak":""],
             ["Should be public?", a.file ? "<b style='color:var(--breach)'>no</b>" : "yes", a.solved?"bad":""]]),
     6: a => a.file
@@ -2491,10 +2859,10 @@ const LAB_MISCONFIG = {
           : a.file.kind === "dump"
             ? note("warn","Layer 6 · the database, as a file","A full dump means every user and password hash — feed it straight into the Cryptographic-Failures lab.")
             : note("warn","Layer 6 · your source, and a CI token","The <code>.git</code> folder rebuilds your entire source history, and that remote URL carries a credential.") )
-      : note("","Layer 6 · nothing here","This path isn’t served. Try /.env or /backup.sql.")
+      : note("","Layer 6 · nothing here","This path isn’t served. Think about what files sit beside the code in a project directory — and what they’d be named.")
   },
   trace(a){ const S=i=>this.layerState(i,a);
-    return [ {h:"L0 · Surface",state:S(0),b:`You browse to <em>${esc(a.path)}</em>.`},
+    return [ {h:"L0 · Surface",state:S(0),b:`You browse to <em>${esc(a.raw)}</em>.`},
       {h:"L1 · Client",state:S(1),b:`Just a URL — no payload.`},
       {h:"L2 · Request",state:S(2),b:`An ordinary GET.`},
       {h:"L3 · Edge",state:S(3),b:a.solved?`<strong>Web root serves it.</strong>`:`Routes to the app.`},
@@ -2503,7 +2871,7 @@ const LAB_MISCONFIG = {
       {h:"L6 · Data",state:S(6),b:a.file?`<strong>File handed over.</strong>`:`404.`} ];
   },
   verdict(a){
-    return [ ["Path", esc(a.path), ""],["Served", a.file?"yes":"no", a.file?"bad":""],
+    return [ ["Path", esc(a.raw), ""],["Served", a.file?"yes":"no", a.file?"bad":""],
       ["Leak", a.file?a.file.kind:"—", a.file?"bad":""],
       ["Lab", a.solved?"Solved":"Not solved", a.solved?"good":""] ];
   }
@@ -2527,9 +2895,20 @@ const LAB_COMPONENTS = {
   boundary:4, boundaryLabel:"HTML parser", boundaryTone:"breach",
   consoleLabel:"Bio markdown", defaultQ:"**Photographer** based in Berlin",
   presets:[ {q:"**Photographer** based in Berlin",label:"Normal bio"},
-            {q:"<img src=x onerror=alert(1)>",label:"Raw HTML"},
-            {q:"[my portfolio](javascript:alert(1))",label:"javascript: link"},
+            {q:"<img src=x onerror=alert(1)>",label:"Raw HTML", spoiler:true},
+            {q:"[my portfolio](javascript:alert(1))",label:"javascript: link", spoiler:true},
             {q:"# Rina Okafor",label:"A heading"} ],
+  wire:{ type:"form", path:"/profile", param:"bio" },
+  challenge:{ steps:[
+    { id:"passthrough", label:"Get markup through the renderer", test:a => a.hasHtml || a.jsLink,
+      hints:["This marked version passes more than **bold** through.",
+             "Angle brackets survive untouched — L6 is the advisory."],
+      reveal:"<b>hi</b>" },
+    { id:"exec", label:"Run script through the old library", test:a => a.fires,
+      hints:["The advisory says raw HTML passes with no sanitization — so anything self-firing works.",
+             "An image that fails to load raises onerror."],
+      reveal:"<img src=x onerror=alert(1)>" }
+  ]},
   analyze(q){
     const md = String(q);
     const vectors = scanVectors(md, "parser");
@@ -2592,9 +2971,12 @@ const LAB_COMPONENTS = {
   }
 };
 
-/* ── A07 · IDENTIFICATION & AUTHENTICATION FAILURES ─────────────────── */
+/* ── A07 · IDENTIFICATION & AUTHENTICATION FAILURES ───────────────────
+   Free-typed attempts are counted in a session log — every guess you
+   type is one row an unthrottled login happily accepted. */
 const CREDS = { "admin@aperture.lab":"password", "r.okafor@aperture.lab":"abc123", "j.lindqvist@aperture.lab":"12345678" };
 const COMMON_PW = ["123456","password","qwerty","letmein","admin","welcome","abc123","iloveyou"];
+const AUTH_LOG = { attempts: [], total: 0 };   // session-scoped, like a real log
 const LAB_AUTH = {
   id:"auth", code:"A07", cat:"Authentication Failures", title:"Username enumeration + no rate limit",
   difficulty:"Practitioner",
@@ -2604,11 +2986,26 @@ const LAB_AUTH = {
            {code:"L4",title:"Server",meta:"the errors"},{code:"L5",title:"Logic",meta:"enumeration"},
            {code:"L6",title:"Data",meta:"users"} ],
   boundary:3, boundaryLabel:"Rate limit", boundaryTone:"breach",
+  wire:{ type:"login" },
   consoleLabel:"Login attempts", defaultQ:"admin@aperture.lab : letmein",
   presets:[ {q:"ghost@nowhere.io : test",label:"No such user"},
             {q:"admin@aperture.lab : letmein",label:"Wrong password"},
-            {q:"admin@aperture.lab : password",label:"Correct"},
-            {q:"admin@aperture.lab : *bruteforce*",label:"Brute-force admin"} ],
+            {q:"admin@aperture.lab : password",label:"Correct", spoiler:true},
+            {q:"admin@aperture.lab : *bruteforce*",label:"Brute-force admin", spoiler:true} ],
+  challenge:{ steps:[
+    { id:"enum", label:"Confirm which emails exist", test:a => a.exists && !a.ok,
+      hints:["The two error messages differ — that difference is an oracle.",
+             "Right email, wrong password: the server says which half failed."],
+      reveal:"admin@aperture.lab : letmein" },
+    { id:"signin", label:"Sign in as the admin", test:a => a.admin,
+      hints:["Enumeration picked the target; now guess. The admin reused a famous word.",
+             "The most common password in the world."],
+      reveal:"admin@aperture.lab : password" },
+    { id:"brute", label:"Watch a wordlist run unthrottled", test:a => !!(a.brute && a.brute.found),
+      hints:["You don't have to type every guess yourself.",
+             "*bruteforce* as the password runs the visible list at machine speed."],
+      reveal:"admin@aperture.lab : *bruteforce*" }
+  ]},
   analyze(q){
     const s = String(q);
     const [emailRaw, pwRaw=""] = s.split(":");
@@ -2619,7 +3016,12 @@ const LAB_AUTH = {
       const found = COMMON_PW.find(c => c === CREDS[email]);
       brute = { tries: COMMON_PW.indexOf(CREDS[email]) + 1, found: found || null };
       pwUsed = found || pw; ok = !!found;
-    } else ok = exists && CREDS[email] === pw;
+    } else {
+      ok = exists && CREDS[email] === pw;
+      AUTH_LOG.attempts.push({ email, pw, ok });
+      if (AUTH_LOG.attempts.length > 200) AUTH_LOG.attempts.shift();
+      AUTH_LOG.total++;
+    }
     const admin = ok && email === "admin@aperture.lab";
     let err = null;
     if (!ok) err = exists ? "Incorrect password." : "No account with that email.";
@@ -2632,13 +3034,16 @@ const LAB_AUTH = {
       let panel;
       if (a.ok) panel = `<div class="ownerok">✓ Signed in as <b>${esc(a.email)}</b>${a.admin?" — <b style='color:var(--breach)'>administrator</b>. Full control of the store.":"."}</div>`;
       else panel = `<div class="loginerr">${esc(a.err)} <span class="enum">${a.exists?"(this email exists)":"(email unknown)"}</span></div>`;
+      const log = AUTH_LOG.attempts.length ? `<div class="attempts"><div class="rulehdr">this session · ${AUTH_LOG.total} attempt${AUTH_LOG.total===1?"":"s"}, 0 lockouts</div>
+        ${AUTH_LOG.attempts.slice(-4).map(x=>`<div class="att ${x.ok?"hit":"miss"}">${esc(clip(x.email,24))} · ${esc(clip(x.pw,16))} ${x.ok?"→ ✓":"→ ✗"}</div>`).join("")}
+        ${AUTH_LOG.total>4?`<div class="att">… ${AUTH_LOG.total-4} more</div>`:""}</div>` : "";
       const brute = a.brute ? `<div class="attempts"><div class="rulehdr">brute force · common-password list</div>
         ${COMMON_PW.map((c,i)=>`<div class="att ${a.brute.found===c?"hit":(i<a.brute.tries?"miss":"")}">${String(i+1).padStart(3,"0")} · ${esc(c)} ${a.brute.found===c?"→ ✓ match":(i<a.brute.tries?"→ ✗":"")}</div>`).join("")}
         </div><div class="ownerbad" style="margin-top:8px">${a.brute.tries} guesses, no lockout, password found. A real list is millions long.</div>` : "";
       const body = `<h1 class="s-h">Sign in</h1>
         <p class="s-sub">enter as <code>email : password</code></p>
         ${field("Credentials", a.email + " : " + (a.pw==="*bruteforce*"?"*bruteforce*":a.pw), "Log in", "email : password")}
-        <div style="margin-top:12px">${panel}</div>${brute}`;
+        <div style="margin-top:12px">${panel}</div>${log}${brute}`;
       return `<div class="applayer">${siteFrame({ path:"/login", search:false, body })}</div>`;
     },
     1: a => explain("The login form is honest — the server isn’t",
@@ -2652,7 +3057,7 @@ const LAB_AUTH = {
         {t:`<span class="cm"># rate limiting on /login</span>`},
         {t:`<span class="cm"># TODO: add throttling / lockout</span>`, hot:true},
         {t:`<span class="cm"># (none configured)</span>`}
-      ])}${note("warn","Layer 3 · no brakes","With no rate limit, lockout, or CAPTCHA, an attacker can try every password in a leaked list. Even a decent password falls to unlimited guesses — the control that matters here is <em>throttling</em>, not complexity.")}`,
+      ])}${note("warn","Layer 3 · no brakes",`With no rate limit, lockout, or CAPTCHA, an attacker can try every password in a leaked list. <b>${AUTH_LOG.total} attempt${AUTH_LOG.total===1?"":"s"} reached this login this session — all of them answered, none throttled.</b> Even a decent password falls to unlimited guesses; the control that matters here is <em>throttling</em>, not complexity.`)}`,
     4: a => `<pre class="src">${codeLines([
         {t:`<span class="kw">def</span> login(email, pw):`},
         {t:`    user = db.find(email)`},
@@ -2699,14 +3104,37 @@ const LAB_JWT = {
            {code:"L4",title:"Server",meta:"decode"},{code:"L5",title:"Integrity",meta:"the signature"},
            {code:"L6",title:"Data",meta:"the grant"} ],
   boundary:4, boundaryLabel:"Signature check", boundaryTone:"breach",
+  wire:{ type:"jwt",
+    build: q => `GET /account HTTP/1.1\nHost: shop.aperture.lab\nAuthorization: Bearer ${jwtToken(q)}\n`,
+    parse: raw => {
+      const m = /authorization:\s*Bearer\s+(\S+)/i.exec(raw);
+      if (!m) return { error:"No Authorization: Bearer header found." };
+      const parts = m[1].split(".");
+      if (parts.length !== 3) return { error:"That isn't a three-part token." };
+      let payload;
+      try { payload = JSON.parse(b64urlDec(parts[1])); }
+      catch (_){ return { error:"The token payload didn't base64-decode to JSON." }; }
+      return { q: String(payload.role ?? "user") };
+    }
+  },
   consoleLabel:"role claim", defaultQ:"user",
-  presets:[ {q:"user",label:"Normal (you)"},{q:"admin",label:"Escalate to admin"},
-            {q:"superadmin",label:"superadmin"},{q:"editor",label:"editor"} ],
+  presets:[ {q:"user",label:"Normal (you)"},{q:"editor",label:"editor"},
+            {q:"admin",label:"Escalate to admin", spoiler:true},{q:"superadmin",label:"superadmin", spoiler:true} ],
+  challenge:{ steps:[
+    { id:"inspect", label:"Inspect your token’s claims", test:a => a.role === "user",
+      hints:["The middle chunk is just base64 — L1 decodes it for you.",
+             "Fire the normal state and read the payload on L0."],
+      reveal:"user" },
+    { id:"forge", label:"Forge role=admin and take the console", test:a => a.admin,
+      hints:["The payload is yours to rewrite — nobody signed it, and L4 never checks.",
+             "Change the role claim to admin."],
+      reveal:"admin" }
+  ]},
   analyze(q){
     const role = String(q).trim() || "user";
     const header = { alg:"none", typ:"JWT" };
     const payload = { sub:"you@aperture.lab", role, iat:1753900000 };
-    const token = b64url(JSON.stringify(header)) + "." + b64url(JSON.stringify(payload)) + ".";
+    const token = jwtToken(role);
     const admin = role === "admin" || role === "superadmin";
     return { role, header, payload, token, admin, solved: admin };
   },
@@ -2769,6 +3197,13 @@ const LAB_JWT = {
   }
 };
 
+/* ── A08 · JWT helpers ── */
+function jwtToken(role){
+  const header = { alg:"none", typ:"JWT" };
+  const payload = { sub:"you@aperture.lab", role, iat:1753900000 };
+  return b64url(JSON.stringify(header)) + "." + b64url(JSON.stringify(payload)) + ".";
+}
+
 /* ── A09 · SECURITY LOGGING & MONITORING FAILURES ───────────────────── */
 const SCENARIOS = {
   "normal": {label:"A normal visitor", reqs:1, fails:0, takeover:false},
@@ -2785,9 +3220,20 @@ const LAB_LOGGING = {
            {code:"L4",title:"Server",meta:"log config"},{code:"L5",title:"Monitor",meta:"alerting"},
            {code:"L6",title:"Record",meta:"what was kept"} ],
   boundary:5, boundaryLabel:"Detection", boundaryTone:"breach",
-  consoleLabel:"Attack scenario", defaultQ:"account takeover",
+  wire:{ type:"offline" },   // a recorded scenario replays; nothing is live
+  consoleLabel:"Attack scenario", defaultQ:"normal",
   presets:[ {q:"normal",label:"Normal visitor"},{q:"50 failed logins",label:"50 failures"},
             {q:"credential stuffing",label:"Stuffing burst"},{q:"account takeover",label:"Full takeover"} ],
+  challenge:{ steps:[
+    { id:"silence", label:"Replay 50 failures — count the alerts", test:a => a.key === "50 failed logins",
+      hints:["The scenario picker IS the console here.",
+             "Replay 50 failed logins and watch the alert tile stay at zero."],
+      reveal:"50 failed logins" },
+    { id:"takeover", label:"Replay the full takeover", test:a => a.solved,
+      hints:["The last scenario is the whole attack — brute force, login, export.",
+             "Replay the account takeover."],
+      reveal:"account takeover" }
+  ]},
   analyze(q){
     const key = SCENARIOS[String(q)] ? String(q) : "account takeover";
     const s = SCENARIOS[key];
@@ -2862,16 +3308,71 @@ const LAB_LOGGING = {
   }
 };
 
-/* ── A10 · SERVER-SIDE REQUEST FORGERY (SSRF) ───────────────────────── */
+/* ── A10 · SERVER-SIDE REQUEST FORGERY (SSRF) ─────────────────────────
+   The internal/external decision runs through a REAL IP canonicalizer:
+   dotted, decimal, hex and octal IPv4 shorthands (127.1, 0x7f000001,
+   2130706433), IPv6-mapped and bracketed forms, and metadata hostnames
+   all resolve to a canonical address before classification. The lesson:
+   no string blocklist survives contact with address canonicalization. */
+function parseIPv4(host){
+  if (!/^[0-9a-fx.]+$/i.test(host)) return null;
+  const parts = host.split(".");
+  if (parts.length > 4) return null;
+  const vals = parts.map(p => {
+    if (p === "") return NaN;
+    if (/^0[xX][0-9a-f]+$/i.test(p)) return parseInt(p, 16);
+    if (/^0[0-7]+$/.test(p)) return parseInt(p, 8);
+    if (/^\d+$/.test(p)) return parseInt(p, 10);
+    return NaN;
+  });
+  if (vals.some(Number.isNaN)) return null;
+  let ip = 0;
+  for (let i = 0; i < vals.length - 1; i++){
+    if (vals[i] > 255) return null;
+    ip = ip * 256 + vals[i];
+  }
+  const last = vals[vals.length - 1];
+  if (last >= 256 ** (5 - vals.length)) return null;   // must fit the remaining bytes
+  return ip * 256 ** (5 - vals.length) + last;
+}
+const u32ToDotted = n => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join(".");
+const METADATA_NAMES = new Set(["metadata.google.internal", "metadata", "instance-data"]);
+
+function classifyHost(raw){
+  let h = String(raw || "").trim().toLowerCase().replace(/^\[|\]$/g, "");
+  if (h.endsWith(".")) h = h.slice(0, -1);
+  if (!h) return { kind:"none" };
+  if (h.includes(":")){                                   // IPv6 forms
+    const m4 = /::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(h);
+    if (m4) return classifyHost(m4[1]);                   // ::ffff:169.254.169.254
+    if (h === "::1") return { kind:"loopback", ip:"127.0.0.1" };
+    return { kind:"private", ip:h };                      // conservative: treat literal v6 as internal
+  }
+  const u32 = parseIPv4(h);
+  if (u32 !== null){
+    const d = u32ToDotted(u32);
+    const a = (u32 >>> 24) & 255, b = (u32 >>> 16) & 255;
+    if (d === "169.254.169.254") return { kind:"metadata", ip:d };
+    if (a === 127 || a === 0) return { kind:"loopback", ip:d };
+    if (a === 10 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31) || (a === 169 && b === 254))
+      return { kind:"private", ip:d };
+    return { kind:"external", ip:d };
+  }
+  if (METADATA_NAMES.has(h)) return { kind:"metadata", ip:"169.254.169.254" };
+  if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".internal")) return { kind:"loopback", ip:"127.0.0.1" };
+  return { kind:"name", host:h };
+}
+
 const INTERNAL = {
   "169.254.169.254": {label:"cloud instance metadata", creds:true, body:
     `iam/security-credentials/aperture-web:\n{\n  "AccessKeyId": "ASIA4NEXAMPLE7QF",\n  "SecretAccessKey": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLE",\n  "Token": "IQoJb3JpZ2luX2VjE…",\n  "Expiration": "2026-07-31T10:00:00Z"\n}`},
   "127.0.0.1": {label:"localhost admin", body:`Aperture internal admin — trusted because the request came from localhost.\n[ Users ] [ Refunds ] [ Feature flags ]`},
-  "localhost": {label:"localhost admin", body:`Aperture internal admin — trusted from localhost.`},
-  "10.0.0.5": {label:"internal Redis", body:`+OK\nredis 7.2.4\n# keys: session:*, cart:*  (no auth required inside the VPC)`}
+  "10.0.0.5": {label:"internal Redis", body:`+OK\nredis 7.2.4\n# keys: session:*, cart:*  (no auth required inside the VPC)`},
+  private: {label:"internal service", body:`Connection accepted from an internal-only address.\n(service unidentified — but from here you can map the rest of the network)`}
 };
 function hostOf(url){
-  const m = /^\s*[a-z]+:\/\/([^\/:?#]+)/i.exec(url);
+  // bracket-aware: IPv6 literals like [::ffff:169.254.169.254] must survive whole
+  const m = /^\s*[a-z]+:\/\/(\[[^\]]*\]|[^\/:?#]+)/i.exec(url);
   return m ? m[1].toLowerCase() : null;
 }
 const LAB_SSRF = {
@@ -2883,17 +3384,39 @@ const LAB_SSRF = {
            {code:"L4",title:"Server",meta:"fetches it"},{code:"L5",title:"Network",meta:"from inside"},
            {code:"L6",title:"Data",meta:"internal response"} ],
   boundary:4, boundaryLabel:"Network boundary", boundaryTone:"breach",
+  wire:{ type:"json", path:"/products/import", param:"url" },
   consoleLabel:"URLs to import", defaultQ:"https://images.aperture.cdn/lens.jpg",
   presets:[ {q:"https://images.aperture.cdn/lens.jpg",label:"A real image"},
-            {q:"http://169.254.169.254/latest/meta-data/iam/security-credentials/",label:"Cloud metadata"},
             {q:"http://127.0.0.1/admin",label:"localhost admin"},
-            {q:"http://10.0.0.5:6379/",label:"Internal Redis"} ],
+            {q:"http://10.0.0.5:6379/",label:"Internal Redis"},
+            {q:"http://169.254.169.254/latest/meta-data/iam/security-credentials/",label:"Cloud metadata", spoiler:true},
+            {q:"http://2852039166/latest/meta-data/iam/security-credentials/",label:"Bypass · decimal IP", spoiler:true} ],
+  challenge:{ steps:[
+    { id:"inside", label:"Reach a host the internet can’t", test:a => !!a.internal,
+      hints:["The SERVER does the fetching — it can knock on doors your browser can’t.",
+             "Every machine has one address that always answers: itself."],
+      reveal:"http://127.0.0.1/admin" },
+    { id:"creds", label:"Steal the cloud credentials", test:a => a.solved,
+      hints:["Cloud instances ask a link-local address for their own keys — no authentication.",
+             "169.254.169.254 is the metadata service."],
+      reveal:"http://169.254.169.254/latest/meta-data/iam/security-credentials/" },
+    { id:"disguise", label:"Reach metadata with a disguised IP", test:a => a.solved && a.altForm,
+      hints:["A filter that blocks the string “169.254.169.254” still misses its other spellings.",
+             "IPs accept one big decimal number: 2852039166 is 169.254.169.254."],
+      reveal:"http://2852039166/latest/meta-data/iam/security-credentials/" }
+  ]},
   analyze(q){
     const url = String(q).trim();
     const host = hostOf(url);
-    const internal = host ? (INTERNAL[host] || null) : null;
+    const cls = host ? classifyHost(host) : { kind:"none" };
+    let internal = null;
+    if (cls.kind === "metadata") internal = INTERNAL["169.254.169.254"];
+    else if (cls.kind === "loopback") internal = INTERNAL["127.0.0.1"];
+    else if (cls.kind === "private") internal = INTERNAL[cls.ip] || INTERNAL.private;
     const external = !!host && !internal;
-    return { url, host, internal, external, solved: !!(internal && internal.creds) };
+    const canonical = cls.ip || null;
+    const altForm = !!internal && !!canonical && host !== canonical && host !== "localhost";
+    return { url, host, internal, external, canonical, altForm, solved: !!(internal && internal.creds) };
   },
   solved: a => a.solved,
   layerState(i, a){ return ["present","present","present","present", a.internal?"boundary":"present","present","present"][i]; },
@@ -2928,10 +3451,12 @@ const LAB_SSRF = {
         {t:`    <span class="cm"># fix: allowlist hosts; block 127/10/169.254/… ranges</span>`}
       ])}${note("warn","Layer 4 · the server is a confused deputy","<code>requests.get(url)</code> will fetch localhost, private ranges, or the cloud metadata IP just as happily as a CDN. The server has network access and internal trust the attacker lacks — SSRF borrows both.")}`,
     5: a => explain("Reaching what the internet can’t",
-        "From inside the VPC, <code>169.254.169.254</code> is the cloud’s <b>metadata service</b> — it hands running instances their temporary IAM credentials with no authentication. Unreachable from the internet, trivially reachable from a server that fetches attacker-supplied URLs. That one hop turns “fetch an image” into “assume the app’s cloud role.”")
-      + kv([["You asked for", esc(clip(a.url,40)), ""],["Host", a.host||"—", a.internal?"leak":""],
-            ["Reachable from internet?", a.internal?"<b style='color:var(--breach)'>no — internal only</b>":"yes", a.internal?"bad":""],
-            ["Server fetched it?", a.host?"yes":"no", a.internal?"bad":""]]),
+        "From inside the VPC, <code>169.254.169.254</code> is the cloud’s <b>metadata service</b> — it hands running instances their temporary IAM credentials with no authentication. Unreachable from the internet, trivially reachable from a server that fetches attacker-supplied URLs. That one hop turns “fetch an image” into “assume the app’s cloud role.” And note the resolver below: it canonicalizes <em>every</em> spelling of an address before deciding — decimal, hex, octal-dropped, IPv6-mapped — which is why blocking one string stops nothing.")
+      + kv([["You asked for", esc(clip(a.url, 40)), ""],
+            ["Host as typed", a.host || "—", a.internal ? "leak" : ""],
+            ...(a.canonical && a.canonical !== a.host ? [["Canonical address", a.canonical, "bad"]] : []),
+            ["Reachable from internet?", a.internal ? "<b style='color:var(--breach)'>no — internal only</b>" : "yes", a.internal ? "bad" : ""],
+            ["Server fetched it?", a.host ? "yes" : "no", a.internal ? "bad" : ""]]),
     6: a => a.internal
       ? (a.internal.creds
           ? note("warn","Layer 6 · live cloud credentials","Those AWS keys belong to the app’s role. With them an attacker acts <em>as the application</em> against your cloud — read S3, spin up instances, pivot deeper. SSRF to metadata is how a single fetch becomes a cloud breach.")
@@ -3002,6 +3527,121 @@ const CARD = {
 };
 
 /* ════════════════════════════════════════════════════════════════════
+   EXTERNAL LABS — the "infinite labs" seam. A lab file is a plain .js
+   that calls STRATA.registerLab({...}). It is validated against the lab
+   contract — including a real smoke run of analyze/layerState/render —
+   before it joins the catalog. See docs/AUTHORING.md.
+   ════════════════════════════════════════════════════════════════════ */
+const LAB_STATES = new Set(["present", "promoted", "sink", "boundary", "blocked", "absent", "clean"]);
+
+function validateLab(L, opts = {}){
+  const errs = [];
+  const need = (c, m) => { if (!c) errs.push(m); };
+  need(L && typeof L === "object" && !Array.isArray(L), "lab must be an object");
+  if (!L || typeof L !== "object") return { ok:false, errs };
+  need(typeof L.id === "string" && /^[a-z0-9][a-z0-9-]{1,31}$/.test(L.id), "id: lowercase slug (letters/digits/dashes), 2–32 chars");
+  if (typeof L.id === "string" && !opts.allowReplace)
+    need(!LABS.some(x => x.id === L.id), `id: "${L.id}" already exists (reloading a lab replaces it — this error means validation ran outside registerLab)`);
+  for (const f of ["code", "title", "cat", "difficulty"])
+    need(typeof L[f] === "string" && L[f].length, `${f}: required non-empty string`);
+  need(typeof L.goal === "string" && L.goal.length, "goal: required string (HTML allowed)");
+  const N = Array.isArray(L.layers) ? L.layers.length : 0;
+  need(N >= 4 && N <= 9, `layers: need 4–9 entries (7 is the house style) — got ${N}`);
+  if (N){
+    L.layers.forEach((ly, i) =>
+      need(ly && typeof ly.code === "string" && typeof ly.title === "string" && typeof ly.meta === "string",
+        `layers[${i}]: needs {code, title, meta} strings`));
+    need(Number.isInteger(L.boundary) && L.boundary >= 0 && L.boundary <= N - 2,
+      `boundary: integer 0..${N - 2} (the membrane floats between planes)`);
+  }
+  need(Array.isArray(L.presets) && L.presets.length >= 1, "presets: at least one {q, label}");
+  (L.presets || []).forEach((p, i) =>
+    need(p && typeof p.q === "string" && typeof p.label === "string", `presets[${i}]: {q, label} strings`));
+  need(typeof L.defaultQ === "string", "defaultQ: string — the lab's opening state");
+  for (const f of ["analyze", "layerState", "trace", "verdict"])
+    need(typeof L[f] === "function", `${f}: required function`);
+  if (!L.tour) need(typeof L.solved === "function", "solved: required function (or set tour:true for a guided tour)");
+  need(L.render && typeof L.render === "object" && !Array.isArray(L.render), "render: object keyed by layer index");
+  if (L.render && N) for (let i = 0; i < N; i++)
+    need(typeof L.render[i] === "function", `render[${i}]: required function`);
+  if (L.challenge){
+    need(Array.isArray(L.challenge.steps) && L.challenge.steps.length, "challenge.steps: non-empty array");
+    (L.challenge.steps || []).forEach((s, i) => {
+      need(s && typeof s.id === "string" && typeof s.label === "string" && typeof s.test === "function",
+        `challenge.steps[${i}]: {id, label, test()}`);
+      need(typeof s.reveal === "string" && s.reveal.length, `challenge.steps[${i}].reveal: payload string`);
+      need(Array.isArray(s.hints) && s.hints.length >= 1, `challenge.steps[${i}].hints: at least one hint string`);
+    });
+  }
+  if (L.wire){
+    need(typeof L.wire.type === "string", "wire.type: string (query|path|json|form|login|jwt|fragment|offline)");
+    if (["query", "json", "form"].includes(L.wire.type))
+      need(typeof L.wire.param === "string", `wire.param: required for type "${L.wire.type}"`);
+  }
+  // smoke: actually run the engine. A lab that throws is not a lab.
+  try {
+    const a = L.analyze(L.defaultQ);
+    for (let i = 0; i < N; i++){
+      const st = L.layerState(i, a);
+      need(LAB_STATES.has(st), `layerState(${i}) returned "${st}" — use the vocabulary: ${[...LAB_STATES].join(" | ")}`);
+      const html = L.render[i](a);
+      need(typeof html === "string", `render[${i}](analysis) must return a string`);
+    }
+    const tr = L.trace(a);
+    need(Array.isArray(tr) && tr.length === N, "trace(analysis): one entry per layer, each {h, state, b}");
+    if (Array.isArray(tr)) tr.forEach((s, i) =>
+      need(s && typeof s.h === "string" && typeof s.b === "string" && LAB_STATES.has(s.state),
+        `trace[${i}]: {h, b, state} and state must be in the vocabulary`));
+    need(Array.isArray(L.verdict(a)), "verdict(analysis): array of [key, value, cls] rows");
+  } catch (err){
+    errs.push("engine smoke test threw: " + (err && err.message));
+  }
+  return { ok: !errs.length, errs };
+}
+
+function showLabErrors(title, errs){
+  const w = document.createElement("div");
+  w.className = "modalwrap";
+  w.innerHTML = `<div class="modalbox"><h3>${esc(title)}</h3>
+    <ul>${errs.map(e => `<li>${esc(e)}</li>`).join("")}</ul>
+    <button class="mok">Back to the drawing board</button></div>`;
+  w.querySelector(".mok").addEventListener("click", () => w.remove());
+  w.addEventListener("click", e => { if (e.target === w) w.remove(); });
+  document.body.appendChild(w);
+}
+
+/* Runs a lab file's code. The file must call STRATA.registerLab(lab). */
+function loadLabText(code, name){
+  const before = LABS.length;
+  const s = document.createElement("script");
+  s.textContent = code + `\n//# sourceURL=${name || "strata-lab-file.js"}`;
+  try { document.head.appendChild(s); }
+  catch (err){ showLabErrors("Lab file threw", [String(err && err.message || err)]); return; }
+  if (LABS.length === before)
+    showLabErrors("Lab file did not register", ["The file ran but never called STRATA.registerLab(lab). Wrap your lab object in that call — see templates/lab-template.js."]);
+}
+
+window.STRATA = {
+  labs: LABS,
+  registerLab(lab, opts = {}){
+    const existing = LABS.findIndex(x => x.id === lab?.id);
+    const v = validateLab(lab, { allowReplace: existing >= 0 });
+    if (!v.ok){ showLabErrors(`Lab "${lab && lab.id ? lab.id : "?"}" failed validation`, v.errs); return false; }
+    if (existing >= 0) LABS.splice(existing, 1, lab);   // reload = replace, so authors can iterate
+    else LABS.push(lab);
+    buildPicker(); buildHome();   // earned progress is kept across reloads
+    if (!opts.silent){ toast(`Lab loaded: ${lab.code} · ${lab.title}`); enterLab(lab.id); }
+    return true;
+  },
+  validate: validateLab,
+  /* everything a lab author builds content with */
+  helpers: { esc, taint, taintMarkup, codeLines, note, explain, kv, field, siteFrame,
+             productCard, safeRender, buildDomTree, intendedVsParsed, vectorList,
+             alertSim, scanVectors, wafScan, md5, clip, plural }
+};
+
+
+/* ════════════════════════════════════════════════════════════════════
    SHELL — lab-agnostic. Rebuilds planes/rail/console on lab switch.
    ════════════════════════════════════════════════════════════════════ */
 const el = id => document.getElementById(id);
@@ -3013,18 +3653,19 @@ callHost.className = "callouts";
 scene.appendChild(callHost);
 
 let LAB = LABS[0];
-let planes = [], calls = [], tiers = [];
-const state = { q:"", active:0, cross:false, analysis:null };
+let planes = [], calls = [], tiers = [], planeDirty = [];
+const state = { q:"", active:0, cross:false, analysis:null, source:"boot", ix:false };
 
 /* lab picker */
-(function buildPicker(){
+function buildPicker(){
   const groups = {};
   LABS.forEach(l => (groups[l.cat] ??= []).push(l));
   el("labsel").innerHTML = Object.entries(groups).map(([cat, ls]) =>
     `<optgroup label="${esc(cat)}">${ls.map(l => `<option value="${l.id}">${l.code} · ${esc(l.title)}</option>`).join("")}</optgroup>`
   ).join("");
-  el("labsel").addEventListener("change", e => buildLab(e.target.value));
-})();
+}
+el("labsel").addEventListener("change", e => buildLab(e.target.value));
+buildPicker();
 
 function buildLab(id){
   LAB = LABS.find(l => l.id === id) || LABS[0];
@@ -3032,7 +3673,8 @@ function buildLab(id){
 
   // reset scene
   planes.forEach(p => p.remove()); calls.forEach(c => c.remove());
-  planes = []; calls = []; el("stackup").innerHTML = "";
+  planes = []; calls = []; planeDirty = []; el("stackup").innerHTML = "";
+  state.ix = false; state.source = "boot";
 
   LAB.layers.forEach((L, i) => {
     const p = document.createElement("section");
@@ -3071,31 +3713,57 @@ function buildLab(id){
   el("labsel").value = LAB.id;
   el("presetLbl").textContent = LAB.consoleLabel || "Payloads";
 
-  // presets
-  el("presets").innerHTML = LAB.presets.map((p, i) =>
-    `<button class="pre" data-i="${i}"><span>${esc(clip(p.q, 32))}</span><small>${esc(p.label)}</small></button>`).join("");
+  // intercept affordance — a lab without a wire gets the lesson, not the tool
+  const ixBtn = el("ixBtn");
+  ixBtn.hidden = !LAB.wire;
+  ixBtn.setAttribute("aria-pressed", "false");
+  el("ixTxt").textContent = "Intercept";
+  if (LAB.wire?.type === "fragment")
+    ixBtn.title = "The fragment never leaves the browser — there is nothing to intercept (that IS the DOM-XSS lesson)";
+  else if (LAB.wire?.type === "offline")
+    ixBtn.title = "This lab replays a scenario offline — there is no live request";
+  else
+    ixBtn.title = "Intercept the lab's virtual request — edit the raw bytes, then send";
+
+  // presets (solution presets stay locked until the lab is solved)
+  rebuildConsole();
 
   state.active = 0; state.cross = false;
-  run(LAB.defaultQ);
+  run(LAB.defaultQ, { source:"boot" });
+}
+
+/* Solution presets ("spoiler:true") stay hidden until the lab is solved —
+   the student earns them. Everything else stays a guided example. */
+function visiblePresets(){ return LAB.presets.filter(p => !p.spoiler || labUnlocked(LAB)); }
+let consoleKey = "";
+function rebuildConsole(){
+  el("presets").innerHTML = visiblePresets().map(p =>
+    `<button class="pre" data-q="${esc(p.q)}"><span>${esc(clip(p.q, 32))}</span><small>${esc(p.label)}</small></button>`).join("");
+  consoleKey = LAB.id + ":" + labUnlocked(LAB);
 }
 
 el("presets").addEventListener("click", e => {
   const b = e.target.closest(".pre"); if (!b) return;
-  run(LAB.presets[+b.dataset.i].q);
+  fire(b.dataset.q, "preset");
 });
 
+/* fire(): every user-initiated send goes through here, so intercept mode
+   can pause the virtual request before it "leaves". */
+function fire(q, source){
+  if (state.ix && ixAvailable()) { openIx(q); return; }
+  run(q, { source });
+}
+
 function layout(){
-  const cs = getComputedStyle(document.documentElement);
-  const num = n => parseFloat(cs.getPropertyValue(n));
+  const t0 = PERF ? performance.now() : 0;
   const N = LAB.layers.length;
   const { active, cross } = state;
-  const gap = cross ? num("--gapx") : num("--gap");
-  const fan = num("--fan");
+  const gap = cross ? TOK.gapx : TOK.gap;
   const mid = (N - 1) / 2;
   const camZ = cross ? (mid + (active - mid) * 0.38) * gap : active * gap;
 
   scene.style.transform = cross
-    ? `rotateX(${cs.getPropertyValue("--tiltx")}) rotateZ(${cs.getPropertyValue("--spinx")}) scale(${num("--zoomx")}) translateZ(${camZ}px)`
+    ? `rotateX(${TOK.tiltx}) rotateZ(${TOK.spinx}) scale(${TOK.zoomx}) translateZ(${camZ}px)`
     : `rotateX(0deg) rotateZ(0deg) translateZ(${camZ}px)`;
   stageEl.classList.toggle("is-cross", cross);
 
@@ -3118,11 +3786,16 @@ function layout(){
       p.style.transform = `translateZ(${-i * gap}px)`;
       p.style.opacity = String(Math.max(0.62, 1 - Math.abs(rel) * 0.06));
       p.style.filter = "none";
+      p.style.visibility = "visible";
     } else {
-      const y = rel > 0 ? -rel * fan : 0;
+      const y = rel > 0 ? -rel * TOK.fan : 0;
       p.style.transform = `translateZ(${-i * gap}px) translateY(${y}px)`;
       p.style.opacity = rel < 0 ? "0" : String(Math.max(0.14, 1 - rel * 0.17));
-      p.style.filter = rel > 0 ? `blur(${Math.min(rel * 0.7, 2.4)}px)` : "none";
+      // blur only the two nearest receding planes — beyond that, dimming
+      // carries the depth and the raster cost disappears
+      p.style.filter = rel > 0 ? `blur(${Math.min(rel, 2) * 0.7}px)` : "none";
+      // two or more planes behind the camera: skip painting entirely
+      p.style.visibility = rel < -1 ? "hidden" : "visible";
     }
   });
 
@@ -3133,15 +3806,58 @@ function layout(){
   tiers.forEach((t, i) => t.setAttribute("aria-current", i === active ? "true" : "false"));
   el("modeBtn").setAttribute("aria-pressed", String(cross));
   el("modeTxt").textContent = cross ? "Cross-section" : "Focus";
+  if (PERF){ perfN.layout = performance.now() - t0; perfShow(); }
 }
 
-function paint({ skipSurface = false } = {}){
-  const a = state.analysis;
-  planes.forEach((p, i) => {
-    if (skipSurface && i === 0) return;
-    p.querySelector(".pbody").innerHTML = LAB.render[i](a);
-  });
+/* ── LAZY PLANE RENDERING ─────────────────────────────────────────────
+   A plane's body is rendered only when it can be seen: the active plane
+   synchronously, everything else in the background after typing settles.
+   While the student types on the surface (plane 0, always the active one
+   at that moment), NO plane body is rebuilt — the input's own DOM stays
+   intact and the layers refresh when the input goes quiet. */
+function renderPlane(i){
+  planes[i].querySelector(".pbody").innerHTML = LAB.render[i](state.analysis);
+  planeDirty[i] = false;
+}
 
+let fillT = 0;
+function scheduleFill(){
+  clearTimeout(fillT);
+  if (PERF) perfN.dirty = planeDirty.filter(Boolean).length;
+  fillT = setTimeout(() => {
+    const queue = planes.map((_, i) => i).filter(i => planeDirty[i]);
+    if (!queue.length) return;
+    const step = () => {
+      // never swap the surface out from under a focused input
+      while (queue.length && queue[0] === 0 &&
+             planes[0].contains(document.activeElement) &&
+             document.activeElement.tagName === "INPUT") queue.shift();
+      for (let k = 0; k < 2 && queue.length; k++) renderPlane(queue.shift());
+      if (queue.length) (window.requestIdleCallback || setTimeout)(step);
+      if (PERF){ perfN.dirty = planeDirty.filter(Boolean).length; perfShow(); }
+    };
+    (window.requestIdleCallback || setTimeout)(step);
+  }, 320);
+}
+
+function paint(o = {}){
+  const t0 = PERF ? performance.now() : 0;
+  const a = state.analysis;
+  for (let i = 0; i < planes.length; i++) planeDirty[i] = true;
+
+  if (!o.skipSurface){ renderPlane(0); bindSurface(); }
+  else if (planeDirty[0]){ planeDirty[0] = false; }   // typing: keep the input's DOM
+  if (planeDirty[state.active] && state.active !== 0) renderPlane(state.active);
+  // in cross-section every body is ~texture; the active plane is enough
+
+  paintHud();
+  scheduleFill();
+  if (PERF){ perfN.paint = performance.now() - t0; perfShow(); }
+}
+
+/* The cheap, always-fresh HUD: trace, verdict, objectives, pill. */
+function paintHud(){
+  const a = state.analysis;
   el("trace").innerHTML = LAB.trace(a).map((s, i) => {
     const cls = STEP_CLASS[s.state] ?? "";
     const active = i <= state.active;
@@ -3151,46 +3867,130 @@ function paint({ skipSurface = false } = {}){
   el("verdict").innerHTML = LAB.verdict(a).map(([k, v, c]) =>
     `<div class="vrow"><span class="k">${k}</span><span class="v ${c || ""}">${esc(v)}</span></div>`).join("");
 
-  const pill = el("solvePill");
-  if (LAB.tour){
-    pill.classList.remove("done"); pill.classList.add("tour");
-    el("solveTxt").textContent = "Guided tour";
-  } else {
-    pill.classList.remove("tour");
-    const done = LAB.solved(a);
-    pill.classList.toggle("done", done);
-    el("solveTxt").textContent = done ? "Solved" : "Not solved";
-  }
+  refreshObjectives(a);
 
-  [...document.querySelectorAll(".pre")].forEach((b, i) =>
-    b.classList.toggle("on", LAB.presets[i].q === state.q));
-
-  if (skipSurface) return;
-  bindSurface();
+  [...document.querySelectorAll(".pre")].forEach(b =>
+    b.classList.toggle("on", b.dataset.q === state.q));
 }
 
-/* Generic surface binding: any lab's L0 exposes a [data-live] input and an
-   optional [data-run] form. Typing re-derives every layer beneath live. */
+/* ── OBJECTIVES ───────────────────────────────────────────────────────
+   A lab with a challenge is a real lab: the student completes steps by
+   making the ENGINE say so. Hints reveal on demand; the final reveal
+   fires the payload but the solve is marked "with hints". A clean solve
+   (all objectives) requires the last run to be typed or intercepted. */
+function refreshObjectives(a){
+  const ch = LAB.challenge, box = el("objs");
+  const pill = el("solvePill");
+  if (!ch || LAB.tour){
+    box.hidden = true;
+    if (LAB.tour){
+      pill.classList.remove("done"); pill.classList.add("tour");
+      el("solveTxt").textContent = "Guided tour";
+    } else {
+      pill.classList.remove("tour");
+      const done = LAB.solved(a);
+      pill.classList.toggle("done", done);
+      el("solveTxt").textContent = done ? "Solved" : "Not solved";
+    }
+    return;
+  }
+  box.hidden = false;
+  const p = progFor(LAB.id);
+  let done = 0, newly = false;
+  ch.steps.forEach(st => {
+    let ok = false;
+    try { ok = !!st.test(a); } catch(_){}
+    if (ok && !p.steps[st.id]){ p.steps[st.id] = true; newly = true; }
+    if (p.steps[st.id]) done++;
+  });
+  const all = done === ch.steps.length;
+  if (all && !p.solved && !p.solvedWithHelp){
+    if (state.source === "typed" || state.source === "intercept"){
+      p.solved = true; toast("Lab solved — and you supplied the payload yourself.");
+    } else {
+      p.solvedWithHelp = true;
+      toast("All objectives done — via preset or hint. Type the payload yourself for a clean solve.");
+    }
+    newly = true;
+  }
+  if (newly){ saveProg(); if (consoleKey !== LAB.id + ":" + labUnlocked(LAB)) rebuildConsole(); }
+
+  el("objList").innerHTML = ch.steps.map(st => {
+    const okc = p.steps[st.id];
+    const rungs = st.hints || [];
+    const used = p.hints[st.id] || 0;
+    let ladder = "";
+    if (!okc && used > 0){
+      const hintTxt = used <= rungs.length ? `<div>${esc(rungs[used - 1])}</div>` : "";
+      const payload = used > rungs.length
+        ? `<div class="orv">payload: <code>${esc(st.reveal)}</code></div>` : "";
+      const btn = used < rungs.length
+        ? `<button class="orb" data-step="${esc(st.id)}" data-act="hint">Another hint</button>`
+        : used === rungs.length
+          ? `<button class="orb" data-step="${esc(st.id)}" data-act="reveal">Reveal payload</button>`
+          : `<button class="orb" data-step="${esc(st.id)}" data-act="run">Run it</button>`;
+      ladder = `<div class="olad">${hintTxt}${payload}${btn}</div>`;
+    }
+    const hintBtn = !okc
+      ? `<button class="ohb" data-step="${esc(st.id)}" data-act="hint">hint</button>` : "";
+    return `<div class="obj ${okc ? "done" : ""}">
+      <span class="od"></span><span class="ol">${esc(st.label)}</span>${hintBtn}${ladder}</div>`;
+  }).join("");
+  el("objsH").textContent = `Objectives · ${done}/${ch.steps.length}`;
+
+  pill.classList.remove("tour");
+  pill.classList.toggle("done", all);
+  el("solveTxt").textContent = all ? (p.solved ? "Solved" : "Solved · hints") : `Objectives ${done}/${ch.steps.length}`;
+}
+
+el("objList").addEventListener("click", e => {
+  const b = e.target.closest("[data-act]"); if (!b) return;
+  const st = LAB.challenge?.steps.find(s => s.id === b.dataset.step); if (!st) return;
+  const p = progFor(LAB.id);
+  if (b.dataset.act === "hint"){ p.hints[st.id] = Math.min((p.hints[st.id] || 0) + 1, st.hints.length + 1); saveProg(); paintHud(); }
+  else if (b.dataset.act === "reveal"){ p.hints[st.id] = st.hints.length + 1; saveProg(); paintHud(); }
+  else if (b.dataset.act === "run"){ run(st.reveal, { source:"hint" }); }
+});
+
+/* Generic surface binding: EVERY [data-live] input on the surface (some
+   labs render two) re-derives the analysis live, coalesced to one paint
+   per animation frame. Enter / submit fires through intercept if on. */
 function bindSurface(){
-  const inp = document.querySelector("[data-live]");
-  if (!inp) return;
-  inp.addEventListener("input", e => {
-    state.q = e.target.value;
+  const inps = [...document.querySelectorAll("[data-live]")];
+  if (!inps.length) return;
+  inps.forEach(inp => {
+    inp.addEventListener("input", e => {
+      state.q = e.target.value;
+      inps.forEach(o => { if (o !== e.target) o.value = state.q; });
+      scheduleLive();
+    });
+    const form = inp.closest("[data-run]");
+    if (form) form.addEventListener("submit", ev => { ev.preventDefault(); fire(state.q, "typed"); });
+    else inp.addEventListener("keydown", ev => {   // fragment bar has no form — Enter still fires
+      if (ev.key === "Enter"){ ev.preventDefault(); fire(state.q, "typed"); }
+    });
+  });
+}
+
+let liveQueued = false;
+function scheduleLive(){
+  if (liveQueued) return; liveQueued = true;
+  requestAnimationFrame(() => {
+    liveQueued = false;
+    const t0 = PERF ? performance.now() : 0;
     state.analysis = LAB.analyze(state.q);
+    if (PERF) perfN.analyze = performance.now() - t0;
     paint({ skipSurface:true });
     layout();  // taint signature (blocked/absent planes) can change per keystroke
-  });
-  const form = inp.closest("[data-run]");
-  if (form) form.addEventListener("submit", e => { e.preventDefault(); run(state.q, { keepFocus:true }); });
-  else inp.addEventListener("keydown", e => {   // fragment bar has no form — Enter still fires
-    if (e.key === "Enter"){ e.preventDefault(); run(state.q, { keepFocus:true }); }
+    if (PERF) perfShow();
   });
 }
 
 function go(i){
   state.active = Math.max(0, Math.min(LAB.layers.length - 1, i));
+  if (planeDirty[state.active]) renderPlane(state.active);
   layout();
-  paint({ skipSurface:true });  // trace "reached" state follows the camera
+  paintHud();   // trace "reached" state follows the camera
 }
 
 function descend(){
@@ -3211,26 +4011,182 @@ function descend(){
 
 function run(q, opts = {}){
   state.q = q;
+  state.source = opts.source || "preset";
+  const t0 = PERF ? performance.now() : 0;
   state.analysis = LAB.analyze(q);
+  if (PERF) perfN.analyze = performance.now() - t0;
+
+  // keep the fake browser's scroll position across the surface rebuild
+  const oldSite = planes[0] && planes[0].querySelector(".site");
+  const siteScroll = oldSite ? oldSite.scrollTop : 0;
+
   paint(); layout(); descend();
-  if (opts.keepFocus){
+
+  const newSite = planes[0] && planes[0].querySelector(".site");
+  if (newSite) newSite.scrollTop = siteScroll;
+
+  if (opts.keepFocus || state.source === "typed"){
     const inp = document.querySelector("[data-live]");
     if (inp){ inp.focus(); try { inp.setSelectionRange(q.length, q.length); } catch (_){} }
   }
 }
 
+/* ══ VIRTUAL INTERCEPT ═══════════════════════════════════════════════
+   Burp-style request editing, scoped to the lab's simulated request.
+   STRATA makes no network calls at all — "intercepting" means pausing
+   the virtual request the lab already renders on its wire layer. The
+   student edits the raw bytes (URL-encoding and all), sends, and every
+   layer re-derives from those bytes exactly as a real server would
+   decode them. The host page's traffic is never touched. */
+const ixWrap = document.createElement("div");
+ixWrap.className = "ixwrap"; ixWrap.hidden = true;
+ixWrap.innerHTML = `<div class="ixpanel">
+  <div class="ixhead"><span class="callout">Intercept · edit the request, then send</span>
+    <button class="ixx" title="Cancel">✕</button></div>
+  <textarea class="ixraw" spellcheck="false" aria-label="Raw request"></textarea>
+  <div class="ixfoot"><span class="ixerr"></span><button class="ixsend">Send →</button></div>
+</div>`;
+document.body.appendChild(ixWrap);
+const ixRaw = ixWrap.querySelector(".ixraw"), ixErr = ixWrap.querySelector(".ixerr");
+ixWrap.querySelector(".ixx").addEventListener("click", () => { ixWrap.hidden = true; });
+ixWrap.querySelector(".ixsend").addEventListener("click", sendIx);
+ixRaw.addEventListener("keydown", e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendIx(); });
+
+function ixAvailable(){ return !!LAB.wire && !["fragment", "offline"].includes(LAB.wire.type); }
+
+function openIx(q){
+  if (!LAB.wire) return;
+  if (LAB.wire.type === "fragment"){
+    toast("The fragment never leaves the browser — there is nothing to intercept. That IS the DOM-XSS lesson.");
+    return;
+  }
+  if (LAB.wire.type === "offline"){
+    toast("This lab runs offline — a scenario replays; no live request exists.");
+    return;
+  }
+  ixRaw.value = buildRaw(q); ixErr.textContent = ""; ixWrap.hidden = false; ixRaw.focus();
+}
+
+function sendIx(){
+  const r = parseRaw(ixRaw.value);
+  if (r.error){ ixErr.textContent = r.error; return; }
+  ixWrap.hidden = true;
+  run(r.q, { source:"intercept" });
+  toast("Sent — every layer re-derived from your edited bytes.");
+}
+
+el("ixBtn").addEventListener("click", () => {
+  if (!LAB.wire) return;
+  if (!ixAvailable()){ openIx(state.q); return; }   // emits the teaching toast
+  state.ix = !state.ix;
+  el("ixBtn").setAttribute("aria-pressed", String(state.ix));
+  el("ixTxt").textContent = state.ix ? "Intercept on" : "Intercept";
+  toast(state.ix ? "Intercept on — the next fire pauses at the wire." : "Intercept off.");
+});
+
+/* Build the raw request the lab's surface would send for payload q. */
+function buildRaw(q){
+  const w = LAB.wire; if (!w) return "";
+  if (w.build) return w.build(q);
+  const host = w.host || "shop.aperture.lab";
+  switch (w.type){
+    case "query":
+      return `GET ${w.path}?${w.param}=${encodeURIComponent(q)} HTTP/1.1\nHost: ${host}\nAccept: text/html,*/*\n`;
+    case "path":
+      return `GET ${String(q).startsWith("/") ? q : "/" + q} HTTP/1.1\nHost: ${host}\nAccept: */*\n`;
+    case "json":
+      return `POST ${w.path} HTTP/1.1\nHost: ${host}\nContent-Type: application/json\n\n${JSON.stringify({ [w.param]: q })}\n`;
+    case "form":
+      return `POST ${w.path} HTTP/1.1\nHost: ${host}\nContent-Type: application/x-www-form-urlencoded\n\n${w.param}=${encodeURIComponent(q)}\n`;
+    case "login": {
+      const [email = "", pw = ""] = String(q).split(":");
+      return `POST /login HTTP/1.1\nHost: ${host}\nContent-Type: application/x-www-form-urlencoded\n\nemail=${encodeURIComponent(email.trim())}&password=${encodeURIComponent(pw.trim())}\n`;
+    }
+    default: return "";
+  }
+}
+
+/* Parse the student's edited bytes back into a payload, the way the
+   origin would: URL-decoding query params and form bodies, JSON-parsing
+   JSON. Editing the wire means owning your own encoding. */
+function parseRaw(raw){
+  const w = LAB.wire; if (!w) return { error:"This lab has no interceptable request." };
+  if (w.parse){
+    try { return w.parse(raw); } catch (err){ return { error:"Couldn't parse: " + err.message }; }
+  }
+  try {
+    const lines = raw.replace(/\r/g, "").split("\n");
+    const m = /^([A-Z]+)\s+(\S+)(?:\s+HTTP\/[\d.]+)?\s*$/.exec((lines[0] || "").trim());
+    if (!m) return { error:"Can't read the request line — expected e.g. GET /path HTTP/1.1" };
+    const target = m[2];
+    const blank = lines.findIndex(l => l.trim() === "");
+    const body = blank >= 0 ? lines.slice(blank + 1).join("\n") : "";
+
+    switch (w.type){
+      case "query": {
+        const qi = target.indexOf("?");
+        const ps = new URLSearchParams(qi >= 0 ? target.slice(qi + 1) : "");
+        if (!ps.has(w.param)) return { error:`No ?${w.param}= in the request line.` };
+        return { q: ps.get(w.param) };
+      }
+      case "path":
+        return { q: decodeURIComponent(target.split("?")[0]) };
+      case "json": {
+        let j; try { j = JSON.parse(body || "{}"); } catch(_){ return { error:"Body isn't valid JSON." }; }
+        if (!(w.param in j)) return { error:`Body has no "${w.param}" field.` };
+        return { q: String(j[w.param]) };
+      }
+      case "form": {
+        const ps = new URLSearchParams(body);
+        if (!ps.has(w.param)) return { error:`Body has no ${w.param}= field.` };
+        return { q: ps.get(w.param) };
+      }
+      case "login": {
+        const ps = new URLSearchParams(body);
+        return { q: `${ps.get("email") || ""} : ${ps.get("password") || ""}` };
+      }
+      default:
+        return { error:"This lab can't be intercepted." };
+    }
+  } catch (err){ return { error:"Couldn't parse: " + err.message }; }
+}
+
 /* ── INPUT ── */
 addEventListener("keydown", e => {
-  if (el("labview").hidden){ if (e.key === "Escape") return; return; }  // inert on the catalog
+  if (!ixWrap.hidden){ if (e.key === "Escape") ixWrap.hidden = true; return; }
+  if (el("labview").hidden) return;   // inert on the catalog
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || "");
   if (e.key === "Escape"){ goHome(); return; }
   if (e.altKey && e.code === "Space"){ e.preventDefault(); state.cross = !state.cross; layout(); return; }
-  if (e.altKey && /^Digit[0-6]$/.test(e.code)){ e.preventDefault(); go(+e.code.slice(5)); return; }
+  if (e.altKey && /^Digit[0-9]$/.test(e.code)){ e.preventDefault(); go(+e.code.slice(5)); return; }
   const up = e.key === "ArrowUp" || e.key === "k", down = e.key === "ArrowDown" || e.key === "j";
   if ((up || down) && (e.altKey || !typing)){ e.preventDefault(); go(state.active + (down ? 1 : -1)); }
 });
+
+/* Wheel: content under the cursor scrolls FIRST. Layer navigation only
+   takes the wheel when the pointer is over stage chrome, or the inner
+   content is already pinned at its edge. (The old handler hijacked any
+   wheel ≥12px anywhere on the stage, which made .pbody/.site unscrollable
+   and teleported students between layers mid-scroll.) */
+function scrollableWithin(t){
+  let n = t;
+  while (n && n !== stageEl){
+    if (n.nodeType === 1 && n.scrollHeight > n.clientHeight + 1){
+      const oy = getComputedStyle(n).overflowY;
+      if (oy === "auto" || oy === "scroll") return n;
+    }
+    n = n.parentElement;
+  }
+  return null;
+}
 stageEl.addEventListener("wheel", e => {
   if (Math.abs(e.deltaY) < 12) return;
+  const sc = scrollableWithin(e.target);
+  if (sc){
+    const atTop = sc.scrollTop <= 0;
+    const atBottom = sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 1;
+    if ((e.deltaY > 0 && !atBottom) || (e.deltaY < 0 && !atTop)) return;  // let the content scroll
+  }
   const next = state.active + (e.deltaY > 0 ? 1 : -1);
   if (next < 0 || next > LAB.layers.length - 1) return;
   e.preventDefault();
@@ -3245,14 +4201,21 @@ el("themeBtn").addEventListener("click", () => {
   const cur = root.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
   root.dataset.theme = cur === "dark" ? "light" : "dark";
 });
-addEventListener("resize", layout);
+
+/* resize: tokens change at breakpoints — re-read once, then layout, in a frame */
+let rzQueued = false;
+addEventListener("resize", () => {
+  if (rzQueued) return; rzQueued = true;
+  requestAnimationFrame(() => { rzQueued = false; readTokens(); layout(); });
+});
+readTokens();
 
 /* ── HOME / CATALOG ── */
 function buildHome(){
   const order = [], byCat = {};
   LABS.forEach(l => { if (!byCat[l.cat]){ byCat[l.cat] = []; order.push(l.cat); } byCat[l.cat].push(l); });
   const card = l => {
-    const m = CARD[l.id] || { sig:["a","a","a","a","a","a","a"], blurb:"" };
+    const m = CARD[l.id] || l.card || { sig:["a","a","a","a","a","a","a"], blurb: esc(l.blurb || "") };
     const strip = m.sig.map(c => `<i class="sg-${c}"></i>`).join("");
     const start = l.id === "foundations" ? `<span class="startchip">Start here</span>` : "";
     return `<button class="labcard" data-id="${l.id}">
@@ -3268,13 +4231,43 @@ function buildHome(){
     <header class="hero">
       <div class="hero-mark">STRATA</div>
       <h1 class="hero-h">See <em>why</em> a vulnerability works — not just how to trigger it.</h1>
-      <p class="hero-sub">Every lab is a real, working app. Open one and fly straight down through its layers — the page, the browser code, the network, the server, the database — watching your input travel the whole stack. New to this? <b>Start with Foundations</b> to learn what the layers even are.</p>
+      <p class="hero-sub">Every lab is a real, working app. Open one and fly straight down through its layers — the page, the browser code, the network, the server, the database — watching your input travel the whole stack. Solve labs by <b>typing the payload yourself</b>; hints are there when you need them. New to this? <b>Start with Foundations</b> to learn what the layers even are.</p>
     </header>
     ${tracks}
-    <footer class="home-foot">A teaching prototype — nothing here is a real system, and payloads are analyzed, never executed.</footer>
+    <section class="track"><h2 class="track-h">Your labs</h2><div class="cardgrid">
+      <button class="labcard addlab" id="addLabBtn" type="button">
+        <div class="lc-top"><span class="lc-code">＋</span></div>
+        <div class="lc-title">Load a lab file</div>
+        <div class="lc-blurb">Drop or pick a <code>…lab.js</code> written in the STRATA lab format — it’s validated (and smoke-run) on load. Written for humans and AI authors alike: see <a href="docs/AUTHORING.md">the authoring guide</a>.</div>
+        <div class="lc-strip"><span class="lc-go">Authoring docs ›</span></div>
+      </button>
+    </div></section>
+    <footer class="home-foot">Runs entirely in your browser — payloads are analyzed, never executed · progress lives in localStorage</footer>
   </div>`;
-  [...el("home").querySelectorAll(".labcard")].forEach(b => b.addEventListener("click", () => enterLab(b.dataset.id)));
+  [...el("home").querySelectorAll(".labcard")].forEach(b =>
+    b.addEventListener("click", e => {
+      if (e.target.closest("a")) return;
+      if (b.dataset.id) enterLab(b.dataset.id);
+      else if (b.id === "addLabBtn") pickLabFile();
+    }));
 }
+/* file picker + drag-drop for lab files */
+const labFileInput = Object.assign(document.createElement("input"),
+  { type:"file", accept:".js,.txt,text/javascript" });
+labFileInput.style.display = "none";
+document.body.appendChild(labFileInput);
+function pickLabFile(){ labFileInput.value = ""; labFileInput.click(); }
+labFileInput.addEventListener("change", () => {
+  const f = labFileInput.files[0];
+  if (f) f.text().then(code => loadLabText(code, f.name));
+});
+addEventListener("dragover", e => { if (!el("labview").hidden) return; e.preventDefault(); });
+addEventListener("drop", e => {
+  if (!el("labview").hidden) return;
+  e.preventDefault();
+  const f = e.dataTransfer?.files?.[0];
+  if (f) f.text().then(code => loadLabText(code, f.name));
+});
 
 function enterLab(id){
   el("home").hidden = true;
