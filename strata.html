@@ -3904,7 +3904,8 @@ function refreshObjectives(a){
     if (p.steps[st.id]) done++;
   });
   const all = done === ch.steps.length;
-  if (all && !p.solved && !p.solvedWithHelp){
+  const interactive = ["typed", "intercept", "hint", "preset"].includes(state.source);
+  if (all && !p.solved && !p.solvedWithHelp && interactive){
     if (state.source === "typed" || state.source === "intercept"){
       p.solved = true; toast("Lab solved — and you supplied the payload yourself.");
     } else {
@@ -3931,8 +3932,8 @@ function refreshObjectives(a){
           : `<button class="orb" data-step="${esc(st.id)}" data-act="run">Run it</button>`;
       ladder = `<div class="olad">${hintTxt}${payload}${btn}</div>`;
     }
-    const hintBtn = !okc
-      ? `<button class="ohb" data-step="${esc(st.id)}" data-act="hint">hint</button>` : "";
+    const hintBtn = !okc && used <= rungs.length
+      ? `<button class="ohb" data-step="${esc(st.id)}" data-act="hint">${used ? "hint " + (used + 1) : "hint"}</button>` : "";
     return `<div class="obj ${okc ? "done" : ""}">
       <span class="od"></span><span class="ol">${esc(st.label)}</span>${hintBtn}${ladder}</div>`;
   }).join("");
@@ -3966,8 +3967,13 @@ function bindSurface(){
     });
     const form = inp.closest("[data-run]");
     if (form) form.addEventListener("submit", ev => { ev.preventDefault(); fire(state.q, "typed"); });
-    else inp.addEventListener("keydown", ev => {   // fragment bar has no form — Enter still fires
-      if (ev.key === "Enter"){ ev.preventDefault(); fire(state.q, "typed"); }
+    // Own the Enter key outright: implicit form submission is unreliable in
+    // embedded browsers, and preventDefault here guarantees no double fire.
+    inp.addEventListener("keydown", ev => {
+      if (ev.key === "Enter" && !ev.isComposing){
+        ev.preventDefault();
+        fire(state.q, "typed");
+      }
     });
   });
 }
@@ -3978,6 +3984,7 @@ function scheduleLive(){
   requestAnimationFrame(() => {
     liveQueued = false;
     const t0 = PERF ? performance.now() : 0;
+    state.source = "typed";   // the student's own keystrokes — a live solve is a clean solve
     state.analysis = LAB.analyze(state.q);
     if (PERF) perfN.analyze = performance.now() - t0;
     paint({ skipSurface:true });
