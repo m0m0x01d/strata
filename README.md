@@ -83,7 +83,11 @@ Progress is tracked per lab in both directions (solved / solved·hints / patched
 
 A lab is **data**: layers, presets, a pure `analyze(q)`, per-layer renderers, a taint signature, objectives with hint ladders, an optional defender edition — one contract, validated and smoke-run on load (including a battery of hostile probes). That makes every workflow real: *"build me a lab from this HackerOne report," "harder XSS please," "show me how this code gets exploited."*
 
-**[docs/AUTHORING.md](docs/AUTHORING.md)** is the full authoring guide — the contract, the helper library, the style guide, an AI authoring recipe, and the pre-submit checklist. Start from [`templates/lab-template.js`](templates/lab-template.js) (includes a commented-out `defense` skeleton); [`labs/xss-waf-plus.lab.js`](labs/xss-waf-plus.lab.js) is a complete worked example with a defender edition.
+### Make one with an AI
+
+**[docs/AI-LAB-BRIEF.md](docs/AI-LAB-BRIEF.md)** is written to hand to an AI: paste it (or, in a coding agent, point it at the file) and ask. It covers the four request shapes — *"teach me XSS," "build a lab from this report," "make the last one harder," "we got this finding — make an attack/defense lab"* — the files to deliver, the full contract, the house voice, and how to verify before handing it over. The two newest community labs, [`labs/ssti-jinja.lab.js`](labs/ssti-jinja.lab.js) (SSTI → RCE) and [`labs/blind-sqli.lab.js`](labs/blind-sqli.lab.js) (boolean-oracle extraction), were built from that brief.
+
+**[docs/AUTHORING.md](docs/AUTHORING.md)** is the same contract for a human reading it end to end — the helper library, the style guide, and the pre-submit checklist. Start from [`templates/lab-template.js`](templates/lab-template.js) (includes a commented-out `defense` skeleton); [`labs/xss-waf-plus.lab.js`](labs/xss-waf-plus.lab.js) is a complete worked example with a defender edition.
 
 ### Two load paths, two trust models
 
@@ -102,10 +106,12 @@ The shelf is the only network STRATA ever performs, and only when you click Fetc
 
 ```
 strata.html                  the entire app + the 17 golden-reference labs (one file, ~6.2k lines)
+docs/AI-LAB-BRIEF.md         hand this to an AI to generate a new lab (the headline path)
 docs/AUTHORING.md            the lab format, helper library, style guide, AI recipe
 templates/lab-template.js    scaffold to copy (with defense skeleton)
 labs/                        community labs + catalog.json (SHA-256 pinned);
-                             open-redirect.lab.js doubles as the annotated reference
+                             open-redirect.lab.js doubles as the annotated reference;
+                             ssti-jinja + blind-sqli were built from AI-LAB-BRIEF.md
 scripts/strata.mjs           optional CLI — new · validate · hash · catalog · check
 tests/                       engine · regression · sandbox · lab-file suites (zero deps)
 .github/workflows/ci.yml     runs everything on push/PR

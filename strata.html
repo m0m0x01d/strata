@@ -4633,6 +4633,14 @@ const SEV = {
   "xss-waf-plus":  ["MED",  "6.1"]
 };
 const SEV_CLS = { CRIT:"crit", HIGH:"high", MED:"med", LOW:"low" };
+/* Built-ins keep their severities in SEV above; an authored lab declares its
+   own as severity:["HIGH","8.1"]. Same chip, same tooltip, either way. */
+function sevOf(lab){
+  if (!lab) return null;
+  if (SEV[lab.id]) return SEV[lab.id];
+  const s = lab.severity;
+  return (Array.isArray(s) && SEV_CLS[s[0]] && typeof s[1] === "string") ? s : null;
+}
 
 /* Catalog copy + the per-lab "signature" strip: which layers matter, previewed
    on each card. a=your input active · x=the weak spot · d=absent · s=safe. */
@@ -4739,6 +4747,14 @@ function validateLab(L, opts = {}){
       `wire.type: one of ${WIRES.join(" | ")} — or any custom type IF you also supply build(q) and parse(raw)`);
     if (["query", "json", "form"].includes(L.wire.type))
       need(typeof L.wire.param === "string", `wire.param: required for type "${L.wire.type}"`);
+  }
+  if (L.severity){
+    // literal set, not SEV_CLS — validateLab is inlined into the sandbox
+    // worker, which has no shell globals; a dependency here fails every
+    // severity-bearing lab with "SEV_CLS is not defined".
+    need(Array.isArray(L.severity) && L.severity.length === 2 &&
+      ["CRIT", "HIGH", "MED", "LOW"].includes(L.severity[0]) && typeof L.severity[1] === "string",
+      'severity: ["CRIT"|"HIGH"|"MED"|"LOW", "9.8"] — the bug class\'s typical real-world CVSS, as strings');
   }
   if (L.card){
     need(!Array.isArray(L.card.sig) || (L.card.sig.length === N && L.card.sig.every(c => "axds".includes(c))),
@@ -4962,7 +4978,8 @@ function buildLab(id, mode){
   // header
   el("labCode").textContent = LAB.code;
   el("labModeTag").hidden = state.mode !== "defend";
-  el("labDiff").textContent = LAB.difficulty + (SEV[LAB.id] ? ` · ${SEV[LAB.id][0]} ${SEV[LAB.id][1]}` : "");
+  const labSev = sevOf(LAB);
+  el("labDiff").textContent = LAB.difficulty + (labSev ? ` · ${labSev[0]} ${labSev[1]}` : "");
   el("labGoal").innerHTML = LAB.goal;
   el("labsel").value = LAB.id;
   el("presetLbl").textContent = LAB.consoleLabel || "Payloads";
@@ -5741,7 +5758,7 @@ function buildHome(){
       else if (done > 0) chip = `<span class="chip part">${done}/${l.challenge.steps.length}</span>`;
       if (l.defense) chip += `<span class="chip def">defender edition</span>`;
     }
-    const sv = SEV[l.id];
+    const sv = sevOf(l);
     const sevChip = sv ? `<span class="sev ${SEV_CLS[sv[0]]}" title="Typical real-world severity for this bug class (CVSS 3.1 base)">${sv[0]} ${sv[1]}</span>` : "";
     return `<button class="labcard ${defending ? (defendedP(l) ? "solved" : "") : (solvedP(l) ? "solved" : "")}" data-id="${l.id}">
       <div class="lc-top"><span class="lc-code">${esc(l.code)}</span>${sevChip}<span class="lc-diff">${esc(l.difficulty)}</span>${chip}${start}</div>
@@ -6007,7 +6024,7 @@ self.onmessage = (e) => {
         id:LAB.id, code:LAB.code, title:LAB.title, cat:LAB.cat, difficulty:LAB.difficulty,
         goal:LAB.goal, notes:LAB.notes || "", blurb:LAB.blurb || "",
         layers:LAB.layers, boundary:LAB.boundary, boundaryLabel:LAB.boundaryLabel,
-        boundaryTone:LAB.boundaryTone, consoleLabel:LAB.consoleLabel, defaultQ:LAB.defaultQ,
+        boundaryTone:LAB.boundaryTone, consoleLabel:LAB.consoleLabel, defaultQ:LAB.defaultQ, severity:LAB.severity,
         presets:LAB.presets, tour:!!LAB.tour, card:LAB.card || null,
         wire:LAB.wire ? { type:LAB.wire.type, path:LAB.wire.path, param:LAB.wire.param, host:LAB.wire.host, custom:!!(LAB.wire.build || LAB.wire.parse) } : null,
         challenge:LAB.challenge ? { steps:LAB.challenge.steps.map(s => ({ id:s.id, label:s.label, hints:s.hints || [], reveal:s.reveal })) } : null,

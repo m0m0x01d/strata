@@ -89,5 +89,27 @@ for (const file of ["labs/xss-waf-plus.lab.js", "labs/open-redirect.lab.js"]){
   ok(r?.a?.leaked?.length === 0, "document, localStorage and fetch all unavailable in the sandbox");
 }
 
+/* 5. lab-facing fields validate inside the worker, which has NO shell
+   globals. A severity-bearing lab is the regression guard: validateLab is
+   inlined into the worker, so any dependency on a shell-only symbol
+   (SEV_CLS, SEV, …) fails EVERY such lab with a "not defined" fatal that
+   the two severity-less reference labs above would never catch. */
+{
+  const s = mkWorker();
+  const sevLab = `STRATA.registerLab({ id:"sevcheck", code:"A0", cat:"x", title:"t",
+    difficulty:"Beginner", goal:"g", severity:["CRIT","9.8"],
+    layers:[...Array(4)].map((_,i)=>({code:"L"+i,title:"a",meta:"b"})), boundary:0,
+    presets:[{q:"a",label:"a"}], defaultQ:"a",
+    analyze:()=>({}), layerState:()=>"present",
+    trace:()=>[...Array(4)].map(()=>({h:"a",b:"b",state:"present"})),
+    verdict:()=>[["k","v",""]], solved:()=>false,
+    render:{0:()=>"",1:()=>"",2:()=>"",3:()=>""} });`;
+  s.onmessage({ data: { cmd: "init", code: sevLab, name: "sev", builtinIds: [] } });
+  const ready = s.messages.find(m => m.type === "ready");
+  const fatal = s.messages.find(m => m.type === "fatal");
+  ok(ready, `severity-bearing lab validates in the sandbox (fatal: ${fatal?.error || "none"})`);
+  ok(ready?.snapshot?.severity?.[0] === "CRIT", "severity survives into the worker snapshot");
+}
+
 console.log(fails ? `\n${fails} FAILURES` : "\nALL SANDBOX TESTS PASS");
 process.exit(fails ? 1 : 0);

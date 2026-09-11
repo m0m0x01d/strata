@@ -17,6 +17,22 @@
       "title": "Reflected XSS when every obvious tag is blocked",
       "difficulty": "Practitioner",
       "blurb": "script, img, svg and iframe are all banned. The HTML grammar has 110+ elements — details open ontoggle never read the list. Ships with a defender edition."
+    },
+    {
+      "id": "ssti-jinja",
+      "file": "ssti-jinja.lab.js",
+      "sha256": "56dbc02dd3862631c5c1e8ad6d64d5cf1ed6fe2de80db9911b1aef9819f0aa8c",
+      "title": "A display name rendered as a template — {{7*7}} becomes 49",
+      "difficulty": "Practitioner",
+      "blurb": "The profile greeting compiles user input as a Jinja template. {{7*7}} proves it, {{ config }} leaks the secret, a gadget reaches os.popen. Ships with a defender edition."
+    },
+    {
+      "id": "blind-sqli",
+      "file": "blind-sqli.lab.js",
+      "sha256": "40534d9a1634deef36a01480e1fa12efb5f39c9e5d8862abd73c227f5698cfad",
+      "title": "Blind SQL injection in a gift-card lookup",
+      "difficulty": "Practitioner",
+      "blurb": "The page tells you one bit — found or not — and you read a password out of it, one character per request. Ships with a defender edition."
     }
   ]
 }
