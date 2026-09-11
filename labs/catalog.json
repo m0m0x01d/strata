@@ -1,0 +1,22 @@
+{
+  "name": "STRATA community labs",
+  "description": "Extra labs in the STRATA format — hash-verified, loaded through the in-app shelf into a sandboxed worker.",
+  "labs": [
+    {
+      "id": "open-redirect",
+      "file": "open-redirect.lab.js",
+      "sha256": "5ca5134029eeb7e9d9ea71381401f8dd883ab7db1a914a9336e83ce6559ef4e5",
+      "title": "Unvalidated redirect after login",
+      "difficulty": "Apprentice",
+      "blurb": "The login page sends users wherever returnTo says. //host is protocol-relative; javascript: is worse."
+    },
+    {
+      "id": "xss-waf-plus",
+      "file": "xss-waf-plus.lab.js",
+      "sha256": "4635ab0f06e8da290c6a1e1a1c658995b9436d572149381cb45277d8af69cd9e",
+      "title": "Reflected XSS when every obvious tag is blocked",
+      "difficulty": "Practitioner",
+      "blurb": "script, img, svg and iframe are all banned. The HTML grammar has 110+ elements — details open ontoggle never read the list. Ships with a defender edition."
+    }
+  ]
+}

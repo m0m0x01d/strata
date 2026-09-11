@@ -1165,6 +1165,30 @@ select.labsel option{background:var(--strata); color:var(--ink)}
 .labcard.solved .lc-go{color:var(--ok)}
 .labcard.solved:hover{border-color:var(--ok)}
 
+/* ── COMMUNITY SHELF ───────────────────────────────────────────── */
+.shelfnote{font-size:12px;color:var(--dim);line-height:1.55;margin:8px 0 14px}
+.shelflbl{display:block;font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ice);margin:0 0 6px}
+.shelfurl{width:100%;box-sizing:border-box;background:var(--void);border:1px solid var(--rule);border-radius:6px;
+  color:var(--ink);font:12.5px/1.4 var(--mono);padding:9px 10px}
+.shelfurl:focus{outline:none;border-color:var(--signal)}
+.shelfrow{display:flex;gap:8px;margin:10px 0}
+.mghost{background:none;border:1px solid var(--rule);color:var(--ice);border-radius:7px;padding:8px 14px;font:600 12px/1 var(--mono);cursor:pointer}
+.mghost:hover{border-color:var(--signal);color:var(--ink)}
+.shelflist{max-height:320px;overflow:auto;border-top:1px solid var(--rule);padding-top:4px}
+.shelfempty{font-size:12px;color:var(--dim);padding:10px 2px}
+.shelfempty.bad{color:var(--breach)}
+.shelfsub{color:var(--dim);font-size:11px}
+.shelfitem{border:1px solid var(--rule);border-radius:8px;padding:10px 12px;margin:8px 0}
+.si-top{display:flex;align-items:baseline;gap:8px}
+.si-top b{font-size:13px}
+.si-diff{font:600 9.5px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ice);margin-left:auto}
+.si-blurb{font-size:11.5px;color:var(--ice);margin:5px 0 7px;line-height:1.5}
+.si-meta{display:flex;gap:10px;align-items:baseline;font:10.5px/1.4 var(--mono);color:var(--dim);margin-bottom:8px}
+.si-hash{color:var(--ok)}
+.shelfitem button{background:var(--raise);border:1px solid var(--rule-2);color:var(--ink);border-radius:6px;padding:6px 12px;font:600 11.5px/1 var(--mono);cursor:pointer}
+.shelfitem button:hover:not(:disabled){border-color:var(--signal)}
+.shelfitem button:disabled{opacity:.4;cursor:not-allowed}
+
 /* ── DEFENDER MODE ─────────────────────────────────────────────── */
 .hometabs{display:flex;gap:6px;margin:20px auto 0;width:min(1080px,calc(100% - 48px))}
 .htab{font:600 12px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.09em;text-transform:uppercase;
@@ -5300,7 +5324,7 @@ ixWrap.querySelector(".ixx").addEventListener("click", () => { ixWrap.hidden = t
 ixWrap.querySelector(".ixsend").addEventListener("click", sendIx);
 ixRaw.addEventListener("keydown", e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendIx(); });
 
-function ixAvailable(){ return !!LAB.wire && !["fragment", "offline"].includes(LAB.wire.type); }
+function ixAvailable(){ return !!LAB.wire && !["fragment", "offline"].includes(LAB.wire.type) && !LAB.wire.custom; }
 
 function openIx(q){
   if (!LAB.wire) return;
@@ -5595,6 +5619,14 @@ function buildHome(){
         <div class="lc-strip"><span class="lc-go">Authoring docs ›</span></div>
       </button>
     </div></section>
+    <section class="track"><h2 class="track-h">Community shelf<span class="tcount">hash-verified · sandboxed · opt-in network</span></h2><div class="cardgrid">
+      <button class="labcard addlab" id="shelfBtn" type="button">
+        <div class="lc-top"><span class="lc-code">☁</span></div>
+        <div class="lc-title">Browse a community catalog</div>
+        <div class="lc-blurb">Fetch a published <code>catalog.json</code>, verify each lab file's SHA-256 against its entry, and run it inside a sandboxed worker — no DOM, no storage, sanitized output. The only network STRATA ever does, and only when you ask.</div>
+        <div class="lc-strip"><span class="lc-go">Open the shelf ›</span></div>
+      </button>
+    </div></section>
 ${defending ? "" : `    <section class="notes">
   <h2>How STRATA works</h2>
   <p class="lede">STRATA turns a vulnerable app into a cross-section you fly through: seven planes stacked in depth, all rendering the same request at once. Seventeen labs ship in this file — Foundations, the OWASP Top 10, the injection set, and the access-control set — and the catalog takes any number more: a lab file is a plain <code>.js</code> away (see the authoring guide). The same instrument teaches every bug class without changing its rules.</p>
@@ -5641,6 +5673,7 @@ ${defending ? "" : `    <section class="notes">
       if (e.target.closest("a")) return;
       if (b.dataset.id) enterLab(b.dataset.id, homeTab === "defend" ? "defend" : "attack");
       else if (b.id === "addLabBtn") pickLabFile();
+      else if (b.id === "shelfBtn") openShelf();
     }));
   el("homeThemeBtn").addEventListener("click", toggleTheme);
   el("tabAttack").addEventListener("click", () => { if (homeTab !== "attack"){ homeTab = "attack"; buildHome(); } });
@@ -5672,6 +5705,290 @@ addEventListener("drop", e => {
   const f = e.dataTransfer?.files?.[0];
   if (f) f.text().then(code => loadLabText(code, f.name));
 });
+
+
+/* ══ COMMUNITY SHELF + SANDBOX ═══════════════════════════════════════
+   The only intentional network feature in STRATA: an OPT-IN shelf that
+   fetches a published catalog.json, verifies each lab file's SHA-256
+   against its catalog entry, and runs the file inside a Web Worker —
+   no DOM, no localStorage, no same-origin access. Everything a lab
+   produces (renders, traces, verdicts) is sanitized on the way back in.
+   A local file you drag in yourself is consented trust; a file from
+   the internet is not — that asymmetry is the whole design. */
+async function sha256Hex(text){
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+function sanitizeLabHtml(html){
+  if (typeof DOMParser === "undefined") return esc(String(html));
+  const doc = new DOMParser().parseFromString(`<!doctype html><body>${html}`, "text/html");
+  doc.querySelectorAll("script,iframe,object,embed,link,meta,base,form").forEach(n => n.remove());
+  doc.querySelectorAll("*").forEach(el =>
+    [...el.attributes].forEach(at => {
+      const n = at.name.toLowerCase();
+      if (n.startsWith("on")) el.removeAttribute(at.name);
+      else if ((n === "href" || n === "src") &&
+        /^\s*(?:javascript|data|vbscript):/i.test(String(at.value).replace(/[\x00-\x20\x7f]/g, "")))
+        el.removeAttribute(at.name);
+    }));
+  return doc.body.innerHTML;
+}
+
+/* ── the worker: validation, the lab, and the results cache live THERE ── */
+const APPLY_CACHE = new Map();
+let SANDBOX_GEN = 0;
+function buildWorkerSource(){
+  const helperNames = ["esc","taint","taintMarkup","kv","field","codeLines","note","explain","siteFrame",
+    "productCard","clip","plural","entDec","callsAlert","autoFires","scanVectors","wafScan",
+    "safeRenderRaw","safeHref","md5","memoFn","parseIPv4","classifyHost","hostOf","normalizePath",
+    "b64url","b64urlDec","shellScan","resolveUnder","csrfScan","alertOnce","alertSim","alertArg",
+    "buildDomTree","intendedVsParsed","vectorList"];
+  const helpers = helperNames.map(n => {
+    try { return `const ${n} = ${eval(n).toString()};`; } catch(_){ return ""; }
+  }).join("\n");
+  const stubs = `const state = { alertSeen:null };\nconst HOST = ${JSON.stringify(HOST)};\nconst TOK = ${JSON.stringify(TOK)};\nconst STEP_CLASS = ${JSON.stringify(STEP_CLASS)};\nconst ALERT_CALL = ${ALERT_CALL.toString()};\nconst SAFE_TAGS = new Set(${JSON.stringify([...SAFE_TAGS])});\nconst safeRender = safeRenderRaw;\nlet EFFECTS = [];\nfunction toast(m){ EFFECTS.push(["toast", String(m)]); }\n`;
+  const validateSrc = validateLab.toString();
+  const statesSrc = JSON.stringify([...LAB_STATES]);
+  return `"use strict";
+${helpers}
+${stubs}
+let LAB = null;
+const WLABS = [];
+let REG_ERR = null;
+let BUILTIN_IDS = new Set();
+const LAB_STATES = new Set(${statesSrc});
+const LABS = WLABS;                    // validateLab's id-uniqueness check reads this
+const validateLab = (${validateSrc});
+const CACHE = new Map();
+const post = m => self.postMessage(m);
+self.STRATA = {
+  registerLab(lab){
+    try {
+      if (BUILTIN_IDS.has(lab && lab.id)){ REG_ERR = ['id "' + (lab && lab.id) + '" is reserved by a built-in lab']; return false; }
+      const v = validateLab(lab, { allowReplace:false });
+      if (!v.ok){ REG_ERR = v.errs; return false; }
+      WLABS.push(lab); LAB = lab; return true;
+    } catch (err){ REG_ERR = [String(err && err.message)]; return false; }
+  }
+};
+function evalFull(q){
+  const a = LAB.analyze(q);
+  const N = LAB.layers.length;
+  const states = [], renders = [];
+  for (let i = 0; i < N; i++){ states.push(LAB.layerState(i, a)); renders.push(String(LAB.render[i](a))); }
+  const trace = LAB.trace(a).map(s => ({ h:String(s.h), b:String(s.b), state:s.state }));
+  const verdict = (LAB.verdict(a) || []).map(r => [String(r[0]), String(r[1]), String(r[2] || "")]);
+  let solved = false; try { solved = !!LAB.solved(a); } catch(_){}
+  const steps = {};
+  (LAB.challenge && LAB.challenge.steps || []).forEach(st => { try { steps[st.id] = !!st.test(a); } catch(_){ steps[st.id] = false; } });
+  return { a, states, renders, trace, verdict, solved, steps, effects: [] };
+}
+self.onmessage = (e) => {
+  const m = e.data;
+  try {
+    if (m.cmd === "init"){
+      BUILTIN_IDS = new Set(m.builtinIds);
+      REG_ERR = null; LAB = null; WLABS.length = 0; CACHE.clear();
+      try { (0, eval)(m.code + "\\n//# sourceURL=" + (m.name || "sandboxed-lab.js")); }
+      catch (err){ post({ type:"fatal", error:"lab file threw while evaluating: " + (err && err.message) }); return; }
+      if (!LAB){ post({ type:"fatal", error: REG_ERR ? "validation failed: " + REG_ERR.join(" · ") : "the file ran but never called STRATA.registerLab(lab)" }); return; }
+      if (!LAB){ post({ type:"fatal", error: regErr ? "validation failed: " + regErr.join(" · ") : "the file ran but never called STRATA.registerLab(lab)" }); return; }
+      if (LAB.domMode){ post({ type:"fatal", error:"domMode labs need a live DOM — a sandboxed lab can't use it (see AUTHORING.md)" }); return; }
+      const D = LAB.defense;
+      const snapshot = {
+        id:LAB.id, code:LAB.code, title:LAB.title, cat:LAB.cat, difficulty:LAB.difficulty,
+        goal:LAB.goal, notes:LAB.notes || "", blurb:LAB.blurb || "",
+        layers:LAB.layers, boundary:LAB.boundary, boundaryLabel:LAB.boundaryLabel,
+        boundaryTone:LAB.boundaryTone, consoleLabel:LAB.consoleLabel, defaultQ:LAB.defaultQ,
+        presets:LAB.presets, tour:!!LAB.tour, card:LAB.card || null,
+        wire:LAB.wire ? { type:LAB.wire.type, path:LAB.wire.path, param:LAB.wire.param, host:LAB.wire.host, custom:!!(LAB.wire.build || LAB.wire.parse) } : null,
+        challenge:LAB.challenge ? { steps:LAB.challenge.steps.map(s => ({ id:s.id, label:s.label, hints:s.hints || [], reveal:s.reveal })) } : null,
+        defense:D ? { blurb:D.blurb, vectors:D.vectors, options:D.options.map(o => ({ id:o.id, label:o.label, code:o.code })) } : null,
+        sandboxed:true
+      };
+      const probes = [LAB.defaultQ, ...LAB.presets.map(p => p.q),
+        ...((LAB.challenge && LAB.challenge.steps) || []).map(s => s.reveal),
+        ...((D && D.vectors) || []).map(v => v.q),
+        "", "<", "'", '"', "//", "a".repeat(64)];
+      [...new Set(probes)].forEach(q => CACHE.set(q, evalFull(q)));
+      post({ type:"ready", snapshot, cached:[...CACHE.entries()] });
+    }
+    else if (m.cmd === "eval"){
+      let r = CACHE.get(m.q);
+      if (!r){ r = evalFull(m.q); CACHE.set(m.q, r); }
+      post({ type:"result", q:m.q, gen:m.gen, ...r });
+    }
+    else if (m.cmd === "fire"){
+      EFFECTS = [];
+      try { if (typeof LAB.onFire === "function") LAB.onFire(LAB.analyze(m.q)); } catch(_){}
+      post({ type:"fire", q:m.q, effects:EFFECTS });
+    }
+    else if (m.cmd === "apply"){
+      const o = LAB.defense && LAB.defense.options.find(x => x.id === m.optId);
+      let r = null; try { r = o ? o.apply(m.q) : null; } catch(_){ r = { blocked:false, at:null, why:"the patch crashed in the sandbox" }; }
+      post({ type:"apply", optId:m.optId, q:m.q, r });
+    }
+  } catch (err){ post({ type:"fatal", error:String(err && err.message) }); }
+};`;
+}
+
+/* main-side: sanitize anything the worker sends, cache it, repaint */
+function sanitizeSandboxResult(m){
+  m.renders = (m.renders || []).map(sanitizeLabHtml);
+  m.trace = (m.trace || []).map(s => ({ ...s, h: esc(s.h), b: esc(s.b) }));
+  m.verdict = (m.verdict || []).map(([k, v, c]) => [esc(k), esc(v), c]);
+  return m;
+}
+function repaintFromSandbox(){
+  const r = LAB._cache && LAB._cache.get(state.q);
+  if (!r) return;
+  const oldInputs = planes[0] ? [...planes[0].querySelectorAll("input")] : [];
+  const focusIdx = oldInputs.indexOf(document.activeElement);
+  const oldSite = planes[0] && planes[0].querySelector(".site");
+  const siteScroll = oldSite ? oldSite.scrollTop : 0;
+  state.analysis = LAB._mark(state.q, r);
+  paint(); layout();
+  const newSite = planes[0] && planes[0].querySelector(".site");
+  if (newSite) newSite.scrollTop = siteScroll;
+  if (focusIdx >= 0 && planes[0]){
+    const want = [...planes[0].querySelectorAll("input")][focusIdx];
+    if (want){ want.focus(); try { want.setSelectionRange(state.q.length, state.q.length); } catch(_){} }
+  }
+}
+function wireSandboxWorker(worker){
+  worker.onmessage = (e) => {
+    const m = e.data;
+    const lab = LABS.find(l => l._worker === worker);
+    if (m.type === "ready"){
+      const snap = m.snapshot;
+      if (BUILTIN_IDS.has(snap.id)){ showLabErrors("Reserved id", [`id "${snap.id}" belongs to a built-in lab — the sandboxed file must pick another.`]); worker.terminate(); return; }
+      const prev = LABS.findIndex(l => l.id === snap.id);
+      if (prev >= 0){        // reload = replace, so authors can iterate
+        if (LABS[prev]._worker) LABS[prev]._worker.terminate();
+        LABS.splice(prev, 1);
+      }
+      const cache = new Map(m.cached.map(([q, r]) => [q, sanitizeSandboxResult(r)]));
+      const proxy = makeSandboxLab(snap, worker, cache);
+      LABS.push(proxy);
+      buildPicker(); buildHome();
+      toast(`Sandboxed lab loaded: ${snap.code} · ${snap.title}`);
+      enterLab(snap.id);
+      return;
+    }
+    if (!lab) return;
+    if (m.type === "result"){
+      lab._cache.set(m.q, sanitizeSandboxResult(m));
+      lab._pending.delete(m.q);
+      if (LAB === lab && state.q === m.q) repaintFromSandbox();
+    } else if (m.type === "apply"){
+      APPLY_CACHE.set(m.optId + "\u0000" + m.q, m.r);
+      if (state.mode === "defend" && LAB === lab) refreshDefense(state.analysis);
+    } else if (m.type === "fire"){
+      (m.effects || []).forEach(([k, v]) => { if (k === "toast") toast(v); });
+    } else if (m.type === "fatal"){
+      showLabErrors("Sandboxed lab failed", [m.error]);
+    }
+  };
+  worker.onerror = () => showLabErrors("Sandbox crashed", ["The worker threw before it could register a lab. The browser console has the detail."]);
+}
+function makeSandboxLab(snap, worker, cache){
+  const lab = { ...snap, _worker: worker, _cache: cache, _pending: new Set(),
+    _ensure(q){ if (!cache.has(q) && !this._pending.has(q)){ this._pending.add(q); SANDBOX_GEN++; worker.postMessage({ cmd:"eval", q, gen:SANDBOX_GEN }); } },
+    _mark(q, r){ if (r.a && typeof r.a === "object" && !r.a.__q){ try { Object.defineProperty(r.a, "__q", { value:String(q) }); } catch(_){} } return r.a; },
+    analyze(q){ q = String(q); this._ensure(q); const r = cache.get(q); return r ? this._mark(q, r) : { __q:q, __pending:true }; },
+    layerState(i, a){ const r = cache.get(a && a.__q); return r ? (r.states[i] || "present") : "present"; },
+    trace(a){ const r = cache.get(a && a.__q);
+      return r ? r.trace : this.layers.map(l => ({ h:l.code + " · " + l.title, b:"…", state:"present" })); },
+    verdict(a){ const r = cache.get(a && a.__q);
+      return r ? r.verdict : [["sandbox","thinking…",""]]; },
+    solved(a){ const r = cache.get(a && a.__q); return r ? !!r.solved : false; },
+    render: Object.fromEntries(snap.layers.map((_, i) => [i, a => {
+      const r = cache.get(a && a.__q);
+      return r ? r.renders[i] : `<div class="s-empty">the sandbox is running this payload…</div>`;
+    }])),
+    onFire(a){ if (a && a.__q) worker.postMessage({ cmd:"fire", q:a.__q }); }
+  };
+  if (snap.challenge)
+    lab.challenge = { steps: snap.challenge.steps.map(s => ({ ...s,
+      test(a){ const r = cache.get(a && a.__q); return r ? !!r.steps[this.id] : false; } })) };
+  if (snap.defense)
+    lab.defense = { blurb: snap.defense.blurb, vectors: snap.defense.vectors,
+      options: snap.defense.options.map(o => ({ ...o,
+        apply(q){ const key = o.id + "\u0000" + q;
+          if (APPLY_CACHE.has(key)) return APPLY_CACHE.get(key);
+          worker.postMessage({ cmd:"apply", optId:o.id, q });
+          return { blocked:false, at:null, why:"the sandbox is testing this patch…" }; } })) };
+  return lab;
+}
+function loadLabSandboxed(code, name, verified){
+  const worker = new Worker(URL.createObjectURL(new Blob([buildWorkerSource()], { type:"text/javascript" })));
+  wireSandboxWorker(worker);
+  worker.postMessage({ cmd:"init", code, name:name || "sandboxed-lab.js", builtinIds:[...BUILTIN_IDS] });
+}
+
+/* ── the shelf modal ── */
+const DEFAULT_CATALOG = "https://strata-labs.github.io/strata/labs/catalog.json";
+function openShelf(){
+  const w = document.createElement("div");
+  w.className = "modalwrap";
+  w.innerHTML = `<div class="modalbox shelfbox">
+    <h3>Community shelf</h3>
+    <p class="shelfnote">Loading from here is the <b>only network STRATA ever does</b>, and only because you asked. Every entry is <b>SHA-256 verified</b> against its catalog entry and runs inside a <b>sandboxed worker</b> — no DOM, no storage, sanitized output. Files without a published hash are refused.</p>
+    <label class="shelflbl" for="shelfUrl">Catalog URL — a published catalog.json</label>
+    <input class="shelfurl" id="shelfUrl" spellcheck="false" value="${esc(localStorage.getItem("strata.catalog.url") || DEFAULT_CATALOG)}">
+    <div class="shelfrow">
+      <button class="mok" id="shelfGo">Fetch catalog</button>
+      <button class="mghost" id="shelfClose">Close</button>
+    </div>
+    <div class="shelflist" id="shelfList"><div class="shelfempty">Nothing fetched yet.</div></div>
+  </div>`;
+  const close = () => w.remove();
+  w.addEventListener("click", e => { if (e.target === w) close(); });
+  w.querySelector("#shelfClose").addEventListener("click", close);
+  w.querySelector("#shelfGo").addEventListener("click", () => fetchCatalog(w.querySelector("#shelfUrl").value.trim(), w.querySelector("#shelfList")));
+  document.body.appendChild(w);
+  w.querySelector("#shelfUrl").focus();
+}
+async function fetchCatalog(url, listEl){
+  if (!url){ listEl.innerHTML = `<div class="shelfempty bad">Give the catalog's URL first.</div>`; return; }
+  listEl.innerHTML = `<div class="shelfempty">Fetching ${esc(url)} …</div>`;
+  try {
+    const res = await fetch(url, { cache:"no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status + " " + res.statusText);
+    const cat = await res.json();
+    if (!Array.isArray(cat.labs)) throw new Error("that JSON has no labs[] array — is it a STRATA catalog?");
+    localStorage.setItem("strata.catalog.url", url);
+    listEl.innerHTML = cat.labs.map((e, i) => `<div class="shelfitem">
+      <div class="si-top"><b>${esc(e.title || e.id || "?")}</b><span class="si-diff">${esc(e.difficulty || "")}</span></div>
+      <div class="si-blurb">${esc(e.blurb || "")}</div>
+      <div class="si-meta"><code>${esc(e.file || "")}</code>
+        <span class="si-hash">${e.sha256 ? "sha256 " + esc(e.sha256.slice(0, 12)) + "…" : "no hash — refused"}</span></div>
+      <button class="mok" data-i="${i}" ${e.sha256 && e.file ? "" : "disabled"}>Load sandboxed</button>
+    </div>`).join("") || `<div class="shelfempty">The catalog is empty.</div>`;
+    listEl.querySelectorAll("button[data-i]").forEach(b =>
+      b.addEventListener("click", () => loadFromShelf(cat.labs[+b.dataset.i], url, b)));
+  } catch (err){
+    listEl.innerHTML = `<div class="shelfempty bad">Couldn't load the catalog: ${esc(err.message)}<br><span class="shelfsub">(over file:// most origins refuse fetches; serve STRATA over http, or drag the lab file in yourself)</span></div>`;
+  }
+}
+async function loadFromShelf(entry, catUrl, btn){
+  btn.disabled = true; btn.textContent = "Verifying…";
+  try {
+    const fileUrl = new URL(entry.file, catUrl).toString();
+    const res = await fetch(fileUrl, { cache:"no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status + " fetching " + entry.file);
+    const text = await res.text();
+    const hash = await sha256Hex(text);
+    if (hash !== entry.sha256)
+      throw new Error(`hash mismatch — the file changed since it was catalogued (got ${hash.slice(0, 12)}…, expected ${entry.sha256.slice(0, 12)}…). Refusing by design.`);
+    btn.textContent = "Loading…";
+    loadLabSandboxed(text, entry.file, true);
+    btn.closest(".modalwrap").remove();
+  } catch (err){
+    btn.disabled = false; btn.textContent = "Load sandboxed";
+    btn.parentElement.insertAdjacentHTML("afterbegin", `<div class="shelfempty bad">${esc(err.message)}</div>`);
+  }
+}
 
 function enterLab(id, mode){
   clearTimeout(enterLab._t);
