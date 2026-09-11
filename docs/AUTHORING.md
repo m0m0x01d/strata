@@ -244,6 +244,15 @@ The rules the validator enforces — they ARE the lesson:
 - Write `apply` with the same honesty as `analyze`: prefer re-running
   your own engine (escape, strip, resolve, classify) over returning
   hardcoded booleans. See `labs/xss-waf-plus.lab.js` for a full example.
+- **Deployed patches are applied for real.** When a student deploys an
+  option, the shell routes every payload through its `apply(q)`: blocked
+  requests render a patched refusal on the surface (an HTTP 403 panel, or
+  a client-side panel for fragment/offline labs), the blocking plane goes
+  `blocked`, deeper planes go `clean`, and the trace narrates it. If
+  `apply(q)` says not-blocked, the breach keeps burning and the verdict
+  reads "✗ bypassed". Optionally give an option a
+  `respond(analysis, q) → HTML` function to render the lab-specific
+  patched response instead of the generic panel.
 
 ### Wire / intercept mode
 

@@ -1,3 +1,23 @@
+/* ── PATCHED LENS + SEVERITY ───────────────────────────────────── */
+.patchresp{margin:10px auto;max-width:620px;border:1px solid color-mix(in srgb,var(--ok) 45%,var(--rule));border-radius:10px;
+  background:var(--strata);padding:18px 20px;font-family:var(--mono)}
+.pr-status{font:600 11px/1 var(--mono);letter-spacing:.1em;color:var(--breach);margin-bottom:10px}
+.patchresp .pr-title{font:700 17px/1.3 var(--sans);color:var(--ok);margin-bottom:8px}
+.pr-msg{font:12.5px/1.55 var(--sans);color:var(--ink)}
+.pr-why{font:11.5px/1.55 var(--sans);color:var(--dim);margin-top:10px;border-top:1px solid var(--rule);padding-top:10px}
+.patchresp.client .pr-status{display:none}
+.plane.st-clean .pbody{opacity:.38;filter:saturate(.5)}
+.plane.st-clean .phead{opacity:.5}
+.plane.st-clean{outline:1px dashed color-mix(in srgb,var(--ok) 22%,transparent);outline-offset:-2px}
+.vrow.patch .k{color:var(--ok)}
+.sev{font:700 8.5px/1 var(--mono);letter-spacing:.09em;border-radius:3px;padding:2.5px 6px}
+.sev.crit{background:var(--breach-wash);color:var(--breach);border:1px solid color-mix(in srgb,var(--breach) 45%,transparent)}
+.sev.high{background:var(--taint-wash);color:var(--taint);border:1px solid var(--taint-edge)}
+.sev.med{color:var(--signal);border:1px solid color-mix(in srgb,var(--signal) 40%,transparent)}
+.sev.low{color:var(--dim);border:1px solid var(--rule)}
+.modetag{color:var(--ok);border:1px solid color-mix(in srgb,var(--ok) 45%,transparent);border-radius:3px;
+  font-size:8.5px;letter-spacing:.12em;padding:2px 6px;text-transform:uppercase}
+
 <!doctype html>
 <meta charset="utf-8">
 <title>STRATA — web vulnerabilities in cross-section</title>
@@ -1394,6 +1414,7 @@ select.labsel option{background:var(--strata); color:var(--ink)}
     <div class="labwrap"><select class="labsel" id="labsel" aria-label="Choose a lab"></select></div>
     <div class="goalstrip">
       <span class="lvl" id="labCode">LAB 01</span>
+      <span class="lvl modetag" id="labModeTag" hidden>defender</span>
       <span class="lvl" id="labDiff">Apprentice</span>
       <span class="g" id="labGoal"></span>
     </div>
@@ -4522,6 +4543,29 @@ const LABS = [LAB_FOUNDATIONS,
    kind (iterate on a reload), never the built-ins */
 const BUILTIN_IDS = new Set(LABS.map(l => l.id));
 
+/* Real-world severity for each bug class — typical CVSS 3.1 base scores
+   these findings carry in actual bug-triage. Teaching tool: the number a
+   report gets, next to the number of lines that fix it. */
+const SEV = {
+  sqli:          ["CRIT",  "9.8"],  // AV:N/AC:L/PR:N — full table read → Critical
+  "xss-reflected":["MED",  "6.1"],  // UI:R, same-origin → Medium
+  "xss-dom":     ["MED",   "6.1"],
+  "xss-waf":     ["MED",   "6.1"],
+  idor:          ["HIGH",  "7.5"],  // PII of any account incl. admin
+  crypto:        ["HIGH",  "7.4"],  // offline password cracking on leak
+  design:        ["HIGH",  "8.1"],  // direct financial impact
+  misconfig:     ["HIGH",  "7.5"],  // secrets exposed on the web root
+  components:    ["HIGH",  "8.8"],  // stored XSS → admin sessions
+  auth:          ["CRIT",  "9.8"],  // account takeover
+  jwt:           ["CRIT",  "9.1"],  // auth bypass → admin
+  logging:       ["LOW",   "3.7"],  // detection failure compounds others
+  ssrf:          ["CRIT",  "9.8"],  // cloud metadata → account keys
+  cmdi:          ["CRIT",  "9.8"],
+  lfi:           ["HIGH",  "7.7"],  // /etc/passwd + DB creds
+  csrf:          ["HIGH",  "8.8"]   // financial state change
+};
+const SEV_CLS = { CRIT:"crit", HIGH:"high", MED:"med", LOW:"low" };
+
 /* Catalog copy + the per-lab "signature" strip: which layers matter, previewed
    on each card. a=your input active · x=the weak spot · d=absent · s=safe. */
 const CARD = {
@@ -4783,7 +4827,7 @@ scene.appendChild(callHost);
 let LAB = LABS[0];
 let planes = [], calls = [], tiers = [], planeDirty = [];
 const state = { q:"", active:0, cross:false, analysis:null, source:"boot", ix:false, alertSeen:null, showSpoilers:false,
-  mode:"attack", deployedPatch:null };
+  mode:"attack", deployedPatch:null, patched:null };
 
 /* lab picker */
 function buildPicker(){
@@ -4793,14 +4837,14 @@ function buildPicker(){
     `<optgroup label="${esc(cat)}">${ls.map(l => `<option value="${l.id}">${esc(l.code)} · ${esc(l.title)}</option>`).join("")}</optgroup>`
   ).join("");
 }
-el("labsel").addEventListener("change", e => buildLab(e.target.value, state.mode));
+el("labsel").addEventListener("change", e => buildLab(e.target.value, "attack"));   // the picker is the attacker side
 buildPicker();
 
 function buildLab(id, mode){
   LAB = LABS.find(l => l.id === id) || LABS[0];
   if (mode) state.mode = mode;
   if (state.mode === "defend" && !LAB.defense) state.mode = "attack";   // the picker can land anywhere
-  state.deployedPatch = null;
+  state.deployedPatch = null; state.patched = null;
   el("labview").classList.toggle("defend", state.mode === "defend");
   el("labview").classList.remove("defended");
   // innerHTML-sink labs mark their DOM trees differently (script nodes are inert)
@@ -4811,7 +4855,7 @@ function buildLab(id, mode){
   planes.forEach(p => p.remove()); calls.forEach(c => c.remove());
   planes = []; calls = []; planeDirty = []; el("stackup").innerHTML = "";
   state.ix = false; state.source = "boot"; state.alertSeen = null; state.showSpoilers = false;
-  state.deployedPatch = null;
+  state.deployedPatch = null; state.patched = null;
 
   LAB.layers.forEach((L, i) => {
     const p = document.createElement("section");
@@ -4845,7 +4889,8 @@ function buildLab(id, mode){
 
   // header
   el("labCode").textContent = LAB.code;
-  el("labDiff").textContent = LAB.difficulty;
+  el("labModeTag").hidden = state.mode !== "defend";
+  el("labDiff").textContent = LAB.difficulty + (SEV[LAB.id] ? ` · ${SEV[LAB.id][0]} ${SEV[LAB.id][1]}` : "");
   el("labGoal").innerHTML = LAB.goal;
   el("labsel").value = LAB.id;
   el("presetLbl").textContent = LAB.consoleLabel || "Payloads";
@@ -4923,7 +4968,7 @@ function layout(){
   calls.forEach((c, i) => {
     c.style.transform = `translateZ(${-i * gap + 3}px)`;
     c.classList.toggle("on", i === active);
-    const s = a ? LAB.layerState(i, a) : "present";
+    const s = a ? effLayerState(i, a) : "present";
     c.classList.toggle("blocked", s === "blocked");
     c.classList.toggle("absent", s === "absent");
   });
@@ -4932,8 +4977,9 @@ function layout(){
     const rel = i - active;
     p.classList.toggle("active", rel === 0);
     p.style.pointerEvents = rel === 0 ? "auto" : "none";
-    const s = a ? LAB.layerState(i, a) : "present";
+    const s = a ? effLayerState(i, a) : "present";
     p.classList.toggle("st-blocked", s === "blocked");
+    p.classList.toggle("st-clean", s === "clean");
     if (cross){
       p.style.transform = `translateZ(${-i * gap}px)`;
       p.style.opacity = String(Math.max(0.62, 1 - Math.abs(rel) * 0.06));
@@ -4966,10 +5012,53 @@ function layout(){
    background after typing settles. The surface (plane 0) refreshes LIVE
    while typing — with focus, caret, composition state and page scroll
    restored — so the store visibly reacts to every keystroke. */
+/* ── THE PATCHED LENS ─────────────────────────────────────────────────
+   When a defender deploys a patch, it stops being commentary: it is
+   APPLIED. Every layer below the blocking plane goes cold, the blocking
+   plane turns "blocked", the trace tells the story, and the surface
+   renders the patched app's refusal — or, if the input still slips
+   through, the breach keeps burning and the verdict says "bypassed". */
+function activePatch(){
+  if (state.mode !== "defend" || !state.deployedPatch || !LAB.defense) return null;
+  return LAB.defense.options.find(o => o.id === state.deployedPatch) || null;
+}
+function recomputePatched(q){
+  const opt = activePatch();
+  if (!opt){ state.patched = null; return; }
+  try { state.patched = opt.apply(String(q)); }
+  catch (_){ state.patched = { blocked:false, at:null, why:"the patch itself crashed — also a finding" }; }
+}
+function effLayerState(i, a){
+  const s = LAB.layerState(i, a);
+  if (state.patched && state.patched.blocked){
+    if (i === state.patched.at) return "blocked";
+    if (i > state.patched.at) return "clean";
+  }
+  return s;
+}
+function patchedSurface(a){
+  const p = state.patched, opt = activePatch();
+  if (opt && typeof opt.respond === "function"){
+    try { const out = opt.respond(a, state.q); if (typeof out === "string") return out; } catch(_){}
+  }
+  const http = !LAB.wire || !["fragment", "offline"].includes(LAB.wire.type);
+  if (http) return `<div class="applayer"><div class="patchresp">
+    <div class="pr-status">HTTP/1.1 403 Forbidden</div>
+    <div class="pr-title">✓ The patch held.</div>
+    <div class="pr-msg">This request never completed — <b>${esc(opt ? opt.label : "the patch")}</b> stopped it at L${p.at}.</div>
+    <div class="pr-why">${p.why || ""}</div></div></div>`;
+  return `<div class="applayer"><div class="patchresp client">
+    <div class="pr-title">✓ The patch held.</div>
+    <div class="pr-msg">No request was ever going to save you here — the fix lives in the client, and it stopped your payload at L${p.at}.</div>
+    <div class="pr-why">${p.why || ""}</div></div></div>`;
+}
 function renderPlane(i){
   const p = planes[i];
   if (!p || i >= LAB.layers.length) return;   // a pending fill may outlive a lab switch
-  p.querySelector(".pbody").innerHTML = LAB.render[i](state.analysis);
+  if (i === 0 && state.patched && state.patched.blocked)
+    p.querySelector(".pbody").innerHTML = patchedSurface(state.analysis);
+  else
+    p.querySelector(".pbody").innerHTML = LAB.render[i](state.analysis);
   planeDirty[i] = false;
 }
 
@@ -5027,13 +5116,21 @@ function paintLiveSurface(){
 function paintHud(){
   const a = state.analysis;
   el("trace").innerHTML = LAB.trace(a).map((s, i) => {
-    const cls = STEP_CLASS[s.state] ?? "";
+    let st = s.state, b = s.b;
+    if (state.patched && state.patched.blocked){
+      if (i === state.patched.at){ st = "blocked"; b = `<strong>PATCHED — ${esc((activePatch() || {}).label || "")}.</strong> ${state.patched.why || ""}`; }
+      else if (i > state.patched.at){ st = "clean"; b = "never reached — the request died above."; }
+    }
+    const cls = STEP_CLASS[st] ?? "";
     const active = i <= state.active;
-    return `<li class="step ${active ? cls : (s.state === "absent" ? "absent" : "")}"><div class="sh">${esc(s.h)}</div><div class="sb">${s.b}</div></li>`;
+    return `<li class="step ${active ? cls : (st === "absent" ? "absent" : "")}"><div class="sh">${s.h}</div><div class="sb">${b}</div></li>`;
   }).join("");
 
   el("verdict").innerHTML = LAB.verdict(a).map(([k, v, c]) =>
-    `<div class="vrow"><span class="k">${esc(k)}</span><span class="v ${c || ""}">${esc(v)}</span></div>`).join("");
+    `<div class="vrow"><span class="k">${k}</span><span class="v ${c || ""}">${esc(v)}</span></div>`).join("")
+    + (activePatch()
+      ? `<div class="vrow patch"><span class="k">Patch</span><span class="v ${state.patched && state.patched.blocked ? "good" : "bad"}">${state.patched && state.patched.blocked ? `✓ holds — dies at L${state.patched.at}` : "✗ bypassed"}</span></div>`
+      : "");
 
   refreshObjectives(a);
 
@@ -5143,7 +5240,7 @@ function refreshDefense(a){
   else if (!p.dfp){ p.dfp = dfp; saveProg(); }
   const opt = state.deployedPatch ? D.options.find(o => o.id === state.deployedPatch) : null;
 
-  let inner = `<p class="defnote">The vulnerable build is still live — fire any payload, then pick the patch that should stop it. A patch counts only when <b>every vector dies</b>.</p>`;
+  let inner = `<p class="defnote">${state.deployedPatch && opt ? "Patch <b>deployed</b> — the app is running it. Fire payloads at the surface above: blocked requests die at their layer; anything that still burns is a bypass." : "The vulnerable build is live — fire any payload, then pick the patch that should stop it. A patch counts only when <b>every vector dies</b>."}</p>`;
   if (!opt){
     inner += D.options.map(o => `<button class="dopt" data-opt="${esc(o.id)}"><b>${esc(o.label)}</b><code>${esc(o.code)}</code></button>`).join("");
     el("labview").classList.remove("defended");
@@ -5232,6 +5329,7 @@ function doLive(){
   const t0 = PERF ? performance.now() : 0;
   state.source = "typed";   // the student's own keystrokes — a live solve is a clean solve
   state.analysis = LAB.analyze(state.q);
+  recomputePatched(state.q);
   if (PERF) perfN.analyze = performance.now() - t0;
   for (let i = 1; i < planes.length; i++) planeDirty[i] = true;
   paintLiveSurface();       // L0 reacts live; focus/caret/IME/scroll preserved
@@ -5277,6 +5375,7 @@ function run(q, opts = {}){
   state.source = opts.source || "preset";
   const t0 = PERF ? performance.now() : 0;
   state.analysis = LAB.analyze(q);
+  recomputePatched(q);
   if (PERF) perfN.analyze = performance.now() - t0;
 
   // labs may record per-fire side effects (attempt logs) — analyze stays pure
@@ -5534,8 +5633,10 @@ function buildHome(){
       else if (done > 0) chip = `<span class="chip part">${done}/${l.challenge.steps.length}</span>`;
       if (l.defense) chip += `<span class="chip def">defender edition</span>`;
     }
+    const sv = SEV[l.id];
+    const sevChip = sv ? `<span class="sev ${SEV_CLS[sv[0]]}" title="Typical real-world severity for this bug class (CVSS 3.1 base)">${sv[0]} ${sv[1]}</span>` : "";
     return `<button class="labcard ${defending ? (defendedP(l) ? "solved" : "") : (solvedP(l) ? "solved" : "")}" data-id="${l.id}">
-      <div class="lc-top"><span class="lc-code">${esc(l.code)}</span><span class="lc-diff">${esc(l.difficulty)}</span>${chip}${start}</div>
+      <div class="lc-top"><span class="lc-code">${esc(l.code)}</span>${sevChip}<span class="lc-diff">${esc(l.difficulty)}</span>${chip}${start}</div>
       <div class="lc-title">${esc(l.title)}</div>
       <div class="lc-blurb">${defending ? l.defense.blurb : m.blurb}</div>
       <div class="lc-strip"><span class="sig">${strip}</span><span class="lc-go">${defending ? (defendedP(l) ? "Revisit ›" : "Defend ›") : (solvedP(l) ? "Revisit ›" : "Open ›")}</span></div>
@@ -5635,7 +5736,7 @@ ${defending ? "" : `    <section class="notes">
   <p>Every lab carries <b>objectives</b> in the side rail — phases of the actual attack, from “break the literal” to “exfiltrate the table.” You complete them by making the engine say so, which means <em>typing the payload yourself</em> (or editing the raw request — more on that below). Hints reveal progressively, rung by rung, and the final rung shows the payload — but a solve earned that way is labeled. The preset that completes the final objective stays locked until you've solved the lab. Progress persists in your browser.</p>
 
   <h3>Now in two directions</h3>
-  <p>The <b>Attacker</b> tab is the classic STRATA: type the payload, watch it cross. The <b>Defender</b> tab flips every lab that carries defense data: the same vulnerable build stays live, you deploy candidate patches — parameterize the query, escape the output, check the owner, verify the signature — and the engine runs the <em>full attack battery</em> against your choice. A patch only counts when every vector dies, and the tempting non-fixes (hide the errors, add LIMIT 1, put quotes around it) fail on screen, with the reason.</p>
+  <p>The <b>Attacker</b> tab is the classic STRATA: type the payload, watch it cross. The <b>Defender</b> tab flips every lab that carries defense data: deploy a candidate patch — parameterize the query, escape the output, check the owner, verify the signature — and it is <em>actually applied</em>: the surface starts refusing blocked requests, the blocking layer turns green, everything below it goes cold. Then try to break your own fix; if a payload still burns through, the verdict says <b>bypassed</b>. The engine also runs the full attack battery against your choice — a patch only counts when every vector dies, and the tempting non-fixes (hide the errors, add LIMIT 1, put quotes around it) fail on screen, with the reason.</p>
 
   <h3>The one rule that makes it teach</h3>
   <p>Every byte that originated from the student is drawn in <b style="color:var(--taint)">amber</b>, at every layer, without exception. Nothing else in the interface is warm. You track your own payload from keystroke to query string to parser to DOM without being told where to look — and the moment amber stops being <em>data</em> and becomes <em>syntax</em> (SQL) or <em>markup</em> (HTML) is visible, not narrated.</p>
@@ -5882,7 +5983,11 @@ function wireSandboxWorker(worker){
       if (LAB === lab && state.q === m.q) repaintFromSandbox();
     } else if (m.type === "apply"){
       APPLY_CACHE.set(m.optId + "\u0000" + m.q, m.r);
-      if (state.mode === "defend" && LAB === lab) refreshDefense(state.analysis);
+      if (state.mode === "defend" && LAB === lab){
+        recomputePatched(state.q);
+        renderPlane(0); layout(); paintHud();
+        refreshDefense(state.analysis);
+      }
     } else if (m.type === "fire"){
       (m.effects || []).forEach(([k, v]) => { if (k === "toast") toast(v); });
     } else if (m.type === "fatal"){
@@ -6007,6 +6112,10 @@ function goHome(){
   el("exwrap").hidden = true;
   el("home").hidden = false;
   document.body.classList.remove("in-lab");
+  state.mode = "attack";          // the catalog never inherits a lab's mode
+  state.deployedPatch = null;
+  state.patched = null;
+  el("labview").classList.remove("defend", "defended");
   window.scrollTo(0, 0);
 }
 el("homeBtn").addEventListener("click", goHome);
