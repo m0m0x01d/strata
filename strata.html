@@ -1078,6 +1078,93 @@ select.labsel option{background:var(--strata); color:var(--ink)}
   border:1px solid var(--rule); border-radius:5px; padding:4px 8px;
   font-variant-numeric:tabular-nums}
 
+
+/* ══════════════════════════════════════════════════════════════
+   LANDING — the catalog as a front door: sticky bar, hero with a
+   live mini cross-section, and your progress on every card.
+   ══════════════════════════════════════════════════════════════ */
+.homebar{
+  position:sticky; top:0; z-index:40; display:flex; align-items:center; gap:14px;
+  padding:12px 28px; border-bottom:1px solid var(--rule);
+  background:color-mix(in srgb, var(--void) 82%, transparent);
+  backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+}
+.homebar .brand{display:flex; align-items:baseline}
+.homebar .brand b{font-family:var(--mono); font-size:15px; font-weight:700; letter-spacing:.3em; color:var(--ink)}
+.homebar .brand .v{color:var(--dim); font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; margin-left:9px}
+.homebar .hsep{width:1px; height:18px; background:var(--rule)}
+.homebar .htag{color:var(--dim)}
+.homebar .push{margin-left:auto; display:flex; gap:8px; align-items:center}
+.home-inner{position:relative; z-index:1; padding-top:54px}
+
+.hero{display:grid; grid-template-columns:minmax(0,1fr) 350px; gap:44px; align-items:center; margin-bottom:52px}
+.hero-stack{position:relative; height:330px; perspective:950px; perspective-origin:50% 32%}
+.ms-plane{
+  position:absolute; left:50%; top:46%; width:212px; height:120px; border-radius:7px;
+  border:1px solid var(--rule-2);
+  background:linear-gradient(180deg, color-mix(in srgb,var(--raise) 92%,transparent), var(--strata));
+  box-shadow:0 16px 40px rgba(0,0,0,.28);
+  transform:translate(-50%,-50%) rotateX(57deg) rotateZ(-13deg) translateZ(calc(var(--i) * -30px));
+}
+.ms-plane.hot{border-color:var(--taint-edge); background:color-mix(in srgb,var(--taint) 6%,var(--strata))}
+.ms-plane.top{border-color:var(--signal-deep)}
+.ms-label{
+  position:absolute; left:50%; top:46%; white-space:nowrap;
+  font-family:var(--mono); font-size:9px; font-weight:700; letter-spacing:.18em; text-transform:uppercase;
+  color:var(--dim);
+  transform:translate(-50%,-50%) rotateX(57deg) rotateZ(-13deg) translateZ(var(--z))
+             translateY(-74px) rotateZ(13deg) rotateX(-57deg);
+}
+.ms-label.hot{color:var(--taint)}
+.ms-drop{
+  position:absolute; left:50%; top:46%; width:11px; height:11px; border-radius:50%;
+  background:var(--taint); box-shadow:0 0 0 5px var(--taint-wash), 0 0 22px 4px var(--taint-edge);
+  transform:translate(-50%,-50%) rotateX(57deg) rotateZ(-13deg);
+  animation:msfall 5.4s cubic-bezier(.4,.05,.35,1) infinite;
+}
+@keyframes msfall{
+  0%,7%   { transform:translate(-50%,-50%) rotateX(57deg) rotateZ(-13deg) translateZ(14px) scale(.5); opacity:0 }
+  13%     { opacity:1 }
+  84%     { opacity:1 }
+  95%,100%{ transform:translate(-50%,-50%) rotateX(57deg) rotateZ(-13deg) translateZ(-186px) scale(.65); opacity:0 }
+}
+@media (prefers-reduced-motion:reduce){
+  .ms-drop{animation:none; transform:translate(-50%,-50%) rotateX(57deg) rotateZ(-13deg) translateZ(-86px)}
+}
+
+.hero-ctas{display:flex; gap:10px; margin:24px 0 18px; flex-wrap:wrap}
+.cta{
+  padding:11px 20px; border-radius:8px; cursor:pointer; font-family:var(--mono);
+  font-size:11px; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
+  border:1px solid var(--signal-deep); background:var(--signal-wash); color:var(--signal);
+  transition:filter .15s, border-color .15s, color .15s;
+}
+.cta:hover{filter:brightness(1.18)}
+.cta.ghost{background:transparent; border-color:var(--rule-2); color:var(--ice)}
+.cta.ghost:hover{border-color:var(--signal); color:var(--ink); filter:none}
+.stats{display:flex; gap:8px; flex-wrap:wrap}
+.stat{
+  font-family:var(--mono); font-size:10px; letter-spacing:.08em; color:var(--dim);
+  border:1px solid var(--rule); border-radius:999px; padding:4px 11px;
+  font-variant-numeric:tabular-nums;
+}
+.stat b{color:var(--ink); font-weight:700}
+.stat.taint{border-color:var(--taint-edge)}
+.stat.taint b{color:var(--taint)}
+
+.track-h{display:flex; align-items:baseline; gap:10px}
+.tcount{margin-left:auto; font-family:var(--mono); font-size:9.5px; font-weight:600;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--dim)}
+.chip{
+  font-family:var(--mono); font-size:8.5px; font-weight:700; letter-spacing:.1em;
+  text-transform:uppercase; border:1px solid currentColor; border-radius:3px; padding:1.5px 6px;
+}
+.chip.done{color:var(--ok)}
+.chip.part{color:var(--taint)}
+.labcard.solved{border-color:color-mix(in srgb,var(--ok) 45%,var(--rule))}
+.labcard.solved .lc-go{color:var(--ok)}
+.labcard.solved:hover{border-color:var(--ok)}
+
 /* ── EXPLANATION POPUP (per-lab, bottom-right button) ───────── */
 .fab{
   position:fixed; right:18px; bottom:18px; z-index:60;
@@ -1195,6 +1282,10 @@ select.labsel option{background:var(--strata); color:var(--ink)}
   .side{order:4; border-left:0; border-top:1px solid var(--rule); padding:12px 0 4px}
   .verdict{margin-top:0}
 
+  .hero{grid-template-columns:1fr; gap:8px}
+  .hero-stack{display:none}
+  .homebar{padding:10px 16px; gap:10px}
+  .homebar .hsep, .homebar .htag{display:none}
   .notes{padding:52px 18px 72px}
   :root{--pw:90vw; --ph:362px; --gap:128px; --gapx:74px; --zoomx:.74; --fan:22px}
 }
@@ -4547,11 +4638,12 @@ stageEl.addEventListener("wheel", e => {
 }, { passive:false });
 
 el("modeBtn").addEventListener("click", () => { state.cross = !state.cross; layout(); });
-el("themeBtn").addEventListener("click", () => {
+function toggleTheme(){
   const root = document.documentElement;
   const cur = root.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
   root.dataset.theme = cur === "dark" ? "light" : "dark";
-});
+}
+el("themeBtn").addEventListener("click", toggleTheme);
 
 /* resize: tokens change at breakpoints — re-read once, then layout, in a frame */
 let rzQueued = false;
@@ -4565,35 +4657,84 @@ readTokens();
 function buildHome(){
   const order = [], byCat = {};
   LABS.forEach(l => { if (!byCat[l.cat]){ byCat[l.cat] = []; order.push(l.cat); } byCat[l.cat].push(l); });
+
+  const solvedP = l => { const p = PROGRESS[l.id]; return p && (p.solved || p.solvedWithHelp); };
+  const solvedCount = list => list.filter(solvedP).length;
+  const totalSolved = solvedCount(LABS);
+
   const card = l => {
     const m = CARD[l.id] || l.card || { sig:Array(l.layers.length).fill("a"), blurb: esc(l.blurb || "") };
     const strip = m.sig.slice(0, l.layers.length).map(c => `<i class="sg-${c}"></i>`).join("");
     const start = l.id === "foundations" ? `<span class="startchip">Start here</span>` : "";
-    return `<button class="labcard" data-id="${l.id}">
-      <div class="lc-top"><span class="lc-code">${esc(l.code)}</span><span class="lc-diff">${esc(l.difficulty)}</span>${start}</div>
+    let chip = "";
+    if (!l.tour && l.challenge){
+      const p = PROGRESS[l.id];
+      const done = l.challenge.steps.filter(st => p && p.steps[st.id]).length;
+      if (solvedP(l)) chip = `<span class="chip done">✓ solved${p.solvedWithHelp ? " · hints" : ""}</span>`;
+      else if (done > 0) chip = `<span class="chip part">${done}/${l.challenge.steps.length}</span>`;
+    }
+    return `<button class="labcard ${solvedP(l) ? "solved" : ""}" data-id="${l.id}">
+      <div class="lc-top"><span class="lc-code">${esc(l.code)}</span><span class="lc-diff">${esc(l.difficulty)}</span>${chip}${start}</div>
       <div class="lc-title">${esc(l.title)}</div>
       <div class="lc-blurb">${m.blurb}</div>
-      <div class="lc-strip"><span class="sig">${strip}</span><span class="lc-go">Open ›</span></div>
+      <div class="lc-strip"><span class="sig">${strip}</span><span class="lc-go">${solvedP(l) ? "Revisit ›" : "Open ›"}</span></div>
     </button>`;
   };
-  const tracks = order.map(cat =>
-    `<section class="track"><h2 class="track-h">${esc(cat)}</h2><div class="cardgrid">${byCat[cat].map(card).join("")}</div></section>`).join("");
-  el("home").innerHTML = `<div class="home-inner">
+  const tracks = order.map(cat => {
+    const ls = byCat[cat], n = solvedCount(ls);
+    return `<section class="track"><h2 class="track-h">${esc(cat)}
+      <span class="tcount">${n ? `${n}/${ls.length} solved` : `${ls.length} ${ls.length === 1 ? "lab" : "labs"}`}</span></h2>
+      <div class="cardgrid">${ls.map(card).join("")}</div></section>`;
+  }).join("");
+
+  /* the mini cross-section: six planes, the bug layer lit amber, your
+     payload falling through the stack — the whole product in one glance */
+  const stack = `<div class="hero-stack" aria-hidden="true">
+    ${[0,1,2,3,4,5].map(i => `<div class="ms-plane ${i === 0 ? "top" : ""} ${i === 5 ? "hot" : ""}" style="--i:${i}"></div>`).join("")}
+    <span class="ms-label" style="--z:0px">L0 · the page</span>
+    <span class="ms-label hot" style="--z:-150px">L5 · the weak spot</span>
+    <div class="ms-drop"></div>
+  </div>`;
+
+  el("home").innerHTML = `
+  <header class="homebar">
+    <div class="brand"><b>STRATA</b><span class="v">v0.2 · open source</span></div>
+    <span class="hsep"></span>
+    <span class="callout htag">web security, in cross-section</span>
+    <div class="push">
+      <button class="pill" id="homeThemeBtn">Theme</button>
+      <a class="pill" href="docs/AUTHORING.md">Authoring</a>
+    </div>
+  </header>
+  <div class="home-inner">
     <header class="hero">
-      <div class="hero-mark">STRATA</div>
-      <h1 class="hero-h">See <em>why</em> a vulnerability works — not just how to trigger it.</h1>
-      <p class="hero-sub">Every lab is a real, working app. Open one and fly straight down through its layers — the page, the browser code, the network, the server, the database — watching your input travel the whole stack. Solve labs by <b>typing the payload yourself</b>; hints are there when you need them. New to this? <b>Start with Foundations</b> to learn what the layers even are.</p>
+      <div class="hero-copy">
+        <div class="hero-mark">STRATA</div>
+        <h1 class="hero-h">See <em>why</em> a vulnerability works — not just how to trigger it.</h1>
+        <p class="hero-sub">Every lab is a real, working app sliced into seven layers — the page, the browser code, the network, the server, the database — all rendering your input at once. Solve labs by <b>typing the payload yourself</b> (or intercepting the request Burp-style); hints when you need them, an explanation on every lab.</p>
+        <div class="hero-ctas">
+          <button class="cta" id="ctaStart">Start with Foundations</button>
+          <button class="cta ghost" id="ctaBrowse">Browse the labs ↓</button>
+        </div>
+        <div class="stats">
+          <span class="stat"><b>${LABS.length}</b> labs</span>
+          <span class="stat"><b>7</b> layers each</span>
+          <span class="stat"><b>0</b> dependencies</span>
+          <span class="stat"><b>0</b> network calls</span>
+          ${totalSolved ? `<span class="stat taint"><b>${totalSolved}</b> solved by you</span>` : ""}
+        </div>
+      </div>
+      ${stack}
     </header>
     ${tracks}
-    <section class="track"><h2 class="track-h">Your labs</h2><div class="cardgrid">
+    <section class="track"><h2 class="track-h">Your labs<span class="tcount">lab files · validated on load</span></h2><div class="cardgrid">
       <button class="labcard addlab" id="addLabBtn" type="button">
         <div class="lc-top"><span class="lc-code">＋</span></div>
         <div class="lc-title">Load a lab file</div>
         <div class="lc-blurb">Drop or pick a <code>…lab.js</code> written in the STRATA lab format — it’s validated (and smoke-run) on load. Written for humans and AI authors alike: see <a href="docs/AUTHORING.md">the authoring guide</a>.</div>
         <div class="lc-strip"><span class="lc-go">Authoring docs ›</span></div>
       </button>
-    </div></section>
-    <section class="notes">
+    </div></section>    <section class="notes">
   <h2>How STRATA works</h2>
   <p class="lede">STRATA turns a vulnerable app into a cross-section you fly through: seven planes stacked in depth, all rendering the same request at once. Fourteen labs ship in this file — Foundations, the OWASP Top 10, and the injection set — and the catalog takes any number more: a lab file is a plain <code>.js</code> away (see the authoring guide). The same instrument teaches every bug class without changing its rules.</p>
 
@@ -4637,6 +4778,12 @@ function buildHome(){
       if (b.dataset.id) enterLab(b.dataset.id);
       else if (b.id === "addLabBtn") pickLabFile();
     }));
+  el("homeThemeBtn").addEventListener("click", toggleTheme);
+  el("ctaStart").addEventListener("click", () => enterLab("foundations"));
+  el("ctaBrowse").addEventListener("click", () => {
+    const t = el("home").querySelector(".track");
+    if (t) t.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
+  });
 }
 /* file picker + drag-drop for lab files */
 const labFileInput = Object.assign(document.createElement("input"),
