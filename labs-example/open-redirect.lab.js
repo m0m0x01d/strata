@@ -16,6 +16,8 @@ STRATA.registerLab({
 
   goal: "The login page sends users wherever <b>returnTo</b> says. Land a victim on a site you control.",
 
+  notes:`The login page redirects wherever <code>returnTo</code> says, and the "local" check is <code>startswith("/")</code> — one character short, because <code>//host</code> is a protocol-relative URL. The phish writes itself: the victim sees your domain in the link, then lands on a pixel-perfect clone. And <code>location.href</code> accepts schemes — <code>javascript:</code> turns the redirect into XSS. <b>The fix:</b> parse the URL and require the host to be empty (<code>urlsplit(returnTo).netloc == ""</code>).`,
+
   layers: [
     { code:"L0", title:"Surface",  meta:"the login page" },
     { code:"L1", title:"Client",   meta:"where you land" },

@@ -117,6 +117,11 @@ STRATA.registerLab({
      (or a custom type with your own build(q) and parse(raw)) */
   wire: { type:"query", path:"/", param:"q" },
 
+  /* ── explanation ── optional but expected ──
+     HTML string for the bottom-right "Explanation" popup: the bug in plain
+     words, two to five sentences, ending with the one-line fix. */
+  notes:`The bug: <b>what happens and where</b>. <b>The fix:</b> <code>one line</code>.`,
+
   /* ── catalog card ── optional (built-in labs keep theirs in the file)
      sig: one mark per layer — a=your input active · x=weak spot ·
           d=absent · s=safe */

@@ -1,3 +1,5 @@
+<!doctype html>
+<meta charset="utf-8">
 <title>STRATA — web vulnerabilities in cross-section</title>
 
 <style>
@@ -1076,6 +1078,49 @@ select.labsel option{background:var(--strata); color:var(--ink)}
   border:1px solid var(--rule); border-radius:5px; padding:4px 8px;
   font-variant-numeric:tabular-nums}
 
+/* ── EXPLANATION POPUP (per-lab, bottom-right button) ───────── */
+.fab{
+  position:fixed; right:18px; bottom:18px; z-index:60;
+  display:inline-flex; align-items:center; gap:8px;
+  padding:9px 16px; border-radius:999px; cursor:pointer;
+  border:1px solid var(--rule-2); background:color-mix(in srgb, var(--strata) 88%, transparent);
+  color:var(--ice); font-family:var(--mono); font-size:10.5px; font-weight:700;
+  letter-spacing:.14em; text-transform:uppercase;
+  box-shadow:0 14px 40px rgba(0,0,0,.4);
+  transition:border-color .16s, color .16s;
+}
+.fab:hover{border-color:var(--signal); color:var(--ink)}
+.fab[hidden]{display:none}
+.exwrap{position:fixed; inset:0; z-index:70; display:grid; place-items:center;
+  background:color-mix(in srgb, var(--void) 66%, transparent); backdrop-filter:blur(2px)}
+.exwrap[hidden]{display:none}
+.explainbox{width:min(620px,92vw); max-height:76vh; display:flex; flex-direction:column;
+  border-radius:12px; overflow:hidden; border:1px solid var(--signal-deep);
+  background:var(--strata); box-shadow:0 34px 90px rgba(0,0,0,.55)}
+.exhead{display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:13px 16px; border-bottom:1px solid var(--rule);
+  background:color-mix(in srgb,var(--void) 40%,transparent)}
+.exhead .callout{color:var(--signal)}
+.exttl{font-family:var(--mono); font-size:13px; font-weight:600; color:var(--ink); margin-left:8px}
+.exx{background:none; border:0; color:var(--dim); font-size:14px; cursor:pointer}
+.exx:hover{color:var(--ink)}
+.exbody{padding:16px 18px 20px; overflow-y:auto; font-size:13.5px; line-height:1.65; color:var(--ice)}
+.exbody b{color:var(--ink)}
+.exbody code{font-family:var(--mono); font-size:12px;
+  background:var(--void); border:1px solid var(--rule); border-radius:3px; padding:1px 5px; color:var(--ice)}
+
+/* ── ANSWER PRESETS + SHOW-RESPONSE TOGGLE ─────────────────── */
+.pre.answer{border-color:var(--taint-edge)}
+.pre.answer span{color:var(--taint)}
+.pre.answer small{color:var(--taint)}
+.pre.showresp{border-style:dashed; color:var(--dim); background:transparent}
+.pre.showresp:hover{border-color:var(--taint); color:var(--taint)}
+
+/* ── the lab owns the viewport: no page scroll fighting the planes ── */
+@media (min-width:941px){ body.in-lab{overflow:hidden} }
+.home .notes{padding:56px 0 20px}
+#perf{bottom:64px}
+
 /* ── LOAD-LAB CARD + VALIDATOR MODAL ────────────────────────── */
 .labcard.addlab{border-style:dashed; align-items:flex-start; justify-content:center}
 .labcard.addlab .lc-title{color:var(--ice)}
@@ -1252,41 +1297,16 @@ select.labsel option{background:var(--strata); color:var(--ink)}
   </div>
 </div>
 
-<section class="notes">
-  <h2>Lab notes</h2>
-  <p class="lede">STRATA turns a vulnerable app into a cross-section you fly through: seven planes stacked in depth, all rendering the same request at once. Fourteen labs ship in this file — Foundations, the OWASP Top 10, and the injection set — and the catalog takes any number more: a lab file is a plain <code>.js</code> away (see the authoring guide). The same instrument teaches every bug class without changing its rules.</p>
-
-  <h3>These are real labs, not click-throughs</h3>
-  <p>Every lab carries <b>objectives</b> in the side rail — phases of the actual attack, from “break the literal” to “exfiltrate the table.” You complete them by making the engine say so, which means <em>typing the payload yourself</em> (or editing the raw request — more on that below). Hints reveal progressively, rung by rung, and the final rung shows the payload — but a solve earned that way is labeled. The preset that completes the final objective stays locked until you’ve solved the lab. Progress persists in your browser.</p>
-
-  <h3>The one rule that makes it teach</h3>
-  <p>Every byte that originated from the student is drawn in <b style="color:var(--taint)">amber</b>, at every layer, without exception. Nothing else in the interface is warm. You track your own payload from keystroke to query string to parser to DOM without being told where to look — and the moment amber stops being <em>data</em> and becomes <em>syntax</em> (SQL) or <em>markup</em> (HTML) is visible, not narrated.</p>
-
-  <div class="swatches">
-    <div class="sw"><i style="background:var(--taint)"></i><div><div class="n">Taint</div><div class="d">User-controlled bytes. The only warm hue in the system.</div></div></div>
-    <div class="sw"><i style="background:var(--signal)"></i><div><div class="n">Signal</div><div class="d">The instrument itself — chrome, labels, keywords.</div></div></div>
-    <div class="sw"><i style="background:var(--breach)"></i><div><div class="n">Breach</div><div class="d">A boundary crossed, a parser broken, a request blocked.</div></div></div>
-    <div class="sw"><i style="background:var(--ok)"></i><div><div class="n">Safe</div><div class="d">Data that stayed data. The baseline you’re breaking.</div></div></div>
+<button class="fab" id="explainBtn" hidden>ⓘ Explanation</button>
+<div class="exwrap" id="exwrap" hidden>
+  <div class="explainbox">
+    <div class="exhead">
+      <div><span class="callout" id="exCat"></span><span class="exttl" id="exTitle"></span></div>
+      <button class="exx" id="exClose" title="Close">✕</button>
+    </div>
+    <div class="exbody" id="exBody"></div>
   </div>
-
-  <h3>Each lab has a different taint signature</h3>
-  <p>The reason the same seven planes teach four bugs is that the payload takes a <b>different path</b> through them each time. Fly to cross-section view (<kbd>⌥</kbd><kbd>space</kbd>) and the shape is legible at a glance:</p>
-  <ul>
-    <li><b>Lab 01 · SQL injection</b> — taint present at every layer; it crosses the <em>trust boundary</em> at the server’s f-string and is promoted from string data to SQL syntax at the parser. A hand-written lexer computes quote balance and comment position, so a lone <code>'</code> produces a real unterminated-literal error at a real offset.</li>
-    <li><b>Lab 02 · Reflected XSS</b> — taint present at every layer; the server reflects it unescaped into the response, and the HTML tokenizer promotes it from text to markup. Because it is parsed at page load, even a bare <code>&lt;script&gt;</code> runs.</li>
-    <li><b>Lab 03 · DOM XSS</b> — taint <em>tunnels through the client and skips the network entirely.</em> The payload lives in the URL fragment, which browsers never send, so the request, edge, and server planes go dark — the bug is a source→sink flow in client JS. And <code>&lt;script&gt;</code> written via <code>innerHTML</code> is built but never runs; you need a self-firing handler.</li>
-    <li><b>Lab 04 · Reflected XSS + WAF</b> — taint is stopped at the <em>edge</em> unless you slip past it. The filter is a blocklist, and the lesson is that its grammar (string matching) and the browser’s grammar (HTML tokenizing) disagree — <code>&lt;svg onload&gt;</code> is not on the list, and no finite list covers every tag and handler.</li>
-  </ul>
-
-  <h3>The engine is honest</h3>
-  <p>Under the surface, each lab runs a real analysis, not a lookup table. The XSS engine tokenizes the payload and distinguishes what auto-fires when server-reflected versus when written through <code>innerHTML</code>. The SQL lexer computes quote balance and comment offsets. The crypto lab runs a genuine MD5 (RFC 1321) against a wordlist hashed at load. The SSRF lab canonicalizes IPs — decimal, hex, octal-dropped, IPv6-mapped — before classifying them, so alternate spellings really do reach the metadata service. And the <b>intercept</b> toggle pauses the lab’s <em>virtual</em> request so you can edit the raw bytes Burp-style: the parser URL-decodes your edits exactly as an origin would. Nothing actually executes — the <code>alert()</code> on the surface is a simulated dialog once the engine has proven the vector would fire. Same philosophy everywhere: real reasoning, simulated effect. STRATA itself makes zero network requests.</p>
-
-  <h3>Infinite labs, humans and AI alike</h3>
-  <p>A lab is data: layers, presets, a pure <code>analyze()</code>, per-layer renderers, objectives, hints — one contract, validated and smoke-run on load. <code>STRATA.registerLab()</code> (exposed to lab files, documented in <code>docs/AUTHORING.md</code>) is the seam: drop a lab file onto the catalog to add it. That makes every workflow real — “build me a lab from this HackerOne report,” “harder XSS please,” “show me how this code gets exploited” — because the format, the validator, and the golden examples are all a person or an AI needs to author in this style.</p>
-
-  <h3>What a production build needs next</h3>
-  <p>A lab-manifest catalog on disk with a community index; a sandboxed backend for server-side labs (free-typed exploits against a real origin, not a simulation); per-layer <em>defense</em> annotations that light up green when a student patches the right plane — parameterize the query, escape the template, write to <code>textContent</code>; and progress sync. The layer engine, the taint renderer, the challenge system and the cross-section are the reusable core — everything else is lab content.</p>
-</section>
+</div>
 </div>
 
 
@@ -1821,6 +1841,7 @@ const LAB_SQLI = {
   id:"sqli", code:"A03", cat:"Injection", title:"UNION-based injection in a product filter",
   difficulty:"Apprentice",
   goal:"Read every column of the <b>users</b> table through the search box.",
+  notes:`The bug: the server glues your search text into a SQL query with an f-string, so the database cannot tell your words from its commands. One quote closes the string the developer opened; everything after is parsed as SQL — <code>OR</code> rewrites the condition, <code>--</code> comments out the rest, <code>UNION SELECT</code> appends rows from tables you were never meant to read. <b>The fix is one line:</b> send the value separately — <code>db.execute(sql, (q,))</code> — and no payload can ever change what the query <em>does</em>.`,
   layers:[ {code:"L0",title:"Surface",meta:"rendered UI"}, {code:"L1",title:"DOM",meta:"document tree"},
            {code:"L2",title:"Client",meta:"search.js"}, {code:"L3",title:"Wire",meta:"HTTP/1.1"},
            {code:"L4",title:"Server",meta:"app.py"}, {code:"L5",title:"Query",meta:"assembled SQL"},
@@ -2076,6 +2097,7 @@ const LAB_REFLECTED = {
   id:"xss-reflected", code:"A03", cat:"Injection", title:"Reflected XSS in the search response",
   difficulty:"Apprentice",
   goal:"Get <b>alert()</b> to run by injecting into the search results.",
+  notes:`The bug: the server echoes your search back into the page's HTML unescaped. Your input stops being text and becomes <b>markup</b> — the browser builds real elements from your tags and runs them. Because this page is parsed at load, even a bare <code>&lt;script&gt;</code> executes. <b>The fix</b> is autoescaping: a template's <code>{{ q }}</code> renders <code>&lt;</code> as <code>&amp;lt;</code>, and your payload becomes visible text instead of live code.`,
   layers: XSS_LAYERS, boundary:5, boundaryLabel:"HTML parser",
   defaultQ:"gift ideas",
   presets:[ {q:"gift ideas",label:"Benign search"},
@@ -2176,6 +2198,7 @@ const LAB_DOM = {
   id:"xss-dom", code:"A03", cat:"Injection", title:"DOM XSS in an innerHTML sink",
   difficulty:"Practitioner",
   goal:"Fire <b>alert()</b> using only the URL fragment — the server must never see it.",
+  notes:`The bug lives entirely in the browser: page script reads the URL fragment and writes it into <code>innerHTML</code>. The fragment never leaves the browser — server, wire and any WAF never see it — so only client-side fixes work. Quirk worth remembering: <code>&lt;script&gt;</code> nodes built via innerHTML are <b>inert</b>, but event handlers (<code>&lt;img onerror&gt;</code>, <code>&lt;svg onload&gt;</code>) fire. <b>The fix:</b> write to <code>.textContent</code> — a sink that can only ever make text.`,
   layers: XSS_LAYERS, boundary:5, boundaryLabel:"HTML parser",
   defaultQ:"Gift ideas",
   presets:[ {q:"Gift ideas",label:"Benign fragment"},
@@ -2295,6 +2318,7 @@ const LAB_WAF = {
   id:"xss-waf", code:"A03", cat:"Injection", title:"Reflected XSS behind a blocklist WAF",
   difficulty:"Practitioner",
   goal:"Fire <b>alert()</b> — but the edge filter blocks the obvious payloads.",
+  notes:`Same reflected XSS as Lab 02, but a blocklist WAF sits in front. The lesson is the grammar mismatch: the WAF matches <b>strings</b>, the HTML parser accepts a <b>language</b> — and no finite list covers every tag and handler. <code>&lt;svg onload&gt;</code> was never on the list. Blocklists buy time; they do not buy safety. <b>The fix</b> is at the origin — escape the reflection — so whatever slips past the edge is still only text.`,
   layers: XSS_LAYERS, boundary:5, boundaryLabel:"HTML parser",
   defaultQ:"<script>alert(1)<\/script>",
   presets:[ {q:"<script>alert(1)<\/script>",label:"Blocked · script"},
@@ -2421,6 +2445,7 @@ const LAB_FOUNDATIONS = {
   id:"foundations", code:"LAB 00", cat:"Foundations", title:"How a web app is wired",
   difficulty:"Beginner", tour:true,
   goal:"A guided tour of the seven layers — the page, the code, the network, the server, the database. No attack, just the wiring.",
+  notes:`What you are looking at: a normal, <b>correctly-built</b> web app, sliced. The page (L0) is rendered from the DOM (L1) by browser code (L2), which talks HTTP (L3) to a server (L4) that queries a database in SQL (L5–L6). The habit that keeps it safe: your search word travels to the database as a <b>separate value</b> — the <code>?</code> — so it can never be mistaken for part of the command. Every other lab breaks exactly one layer of this stack on purpose. This is the wiring you will be defending.`,
   layers:[ {code:"L0",title:"Surface",meta:"the page"}, {code:"L1",title:"DOM",meta:"page structure"},
            {code:"L2",title:"Client",meta:"browser code"}, {code:"L3",title:"Wire",meta:"HTTP"},
            {code:"L4",title:"Server",meta:"app.py"}, {code:"L5",title:"Query",meta:"safe SQL"},
@@ -2572,6 +2597,7 @@ const LAB_IDOR = {
   id:"idor", code:"A01", cat:"Broken Access Control", title:"IDOR in the account page",
   difficulty:"Apprentice",
   goal:"You are signed in as account #1001. Read another user’s private data — including the admin’s.",
+  notes:`The bug is a missing line, not a broken one: the endpoint checks you are <em>logged in</em> (authentication) but never checks the record is <em>yours</em> (authorization). Any valid session can read any account by changing a number in the URL. <b>The fix:</b> <code>AND owner_id = session.user_id</code> — the query should only ever see rows you own.`,
   layers:[ {code:"L0",title:"Surface",meta:"account page"},{code:"L1",title:"Client",meta:"browser"},
            {code:"L2",title:"Request",meta:"GET /api/account"},{code:"L3",title:"Edge",meta:"proxy"},
            {code:"L4",title:"Server",meta:"app.py"},{code:"L5",title:"AuthZ",meta:"the missing check"},
@@ -2685,6 +2711,7 @@ const LAB_CRYPTO = {
   id:"crypto", code:"A02", cat:"Cryptographic Failures", title:"Passwords stored as unsalted MD5",
   difficulty:"Apprentice",
   goal:"You’ve dumped the password table. Recover the admin’s plaintext password from its hash.",
+  notes:`When this table leaks, every md5 password falls to a precomputed rainbow table — md5 is <b>fast</b> (billions of guesses per second) and <b>unsalted</b> (same password → same hash everywhere on earth). The bcrypt row survives because it is salted and deliberately slow. <b>The fix:</b> bcrypt or argon2 with a per-user salt — if a leak ever happens, you want attackers doing slow math, not dictionary lookups.`,
   layers:[ {code:"L0",title:"Surface",meta:"password audit"},{code:"L1",title:"Client",meta:"browser"},
            {code:"L2",title:"Request",meta:"HTTP"},{code:"L3",title:"Edge",meta:"proxy"},
            {code:"L4",title:"Server",meta:"how it hashes"},{code:"L5",title:"Crypto",meta:"the weakness"},
@@ -2787,6 +2814,7 @@ const LAB_DESIGN = {
   id:"design", code:"A04", cat:"Insecure Design", title:"The checkout trusts a price from the browser",
   difficulty:"Apprentice",
   goal:"Buy the $1,140 Halide Sensor Array for a dollar — or make it pay you.",
+  notes:`No malformed code here — a <b>design decision</b> put a server-authoritative fact (the price) in the client's hands. Whatever the browser sends, an attacker controls: hidden fields, JSON numbers, all of it. <b>The fix:</b> the server looks the price up by item id and ignores whatever number came with the order.`,
   layers:[ {code:"L0",title:"Surface",meta:"checkout"},{code:"L1",title:"Client",meta:"the form"},
            {code:"L2",title:"Request",meta:"POST /checkout"},{code:"L3",title:"Edge",meta:"proxy"},
            {code:"L4",title:"Server",meta:"app.py"},{code:"L5",title:"Design",meta:"who decides price"},
@@ -2915,6 +2943,7 @@ const LAB_MISCONFIG = {
   id:"misconfig", code:"A05", cat:"Security Misconfiguration", title:"Config and backup files served to the world",
   difficulty:"Apprentice",
   goal:"The server hands out files it never should. Read the app’s secrets straight off the web root.",
+  notes:`The web root is the project root, so the server happily hands out everything beside the code: <code>.env</code> (live secrets), <code>backup.sql</code> (the whole database), <code>.git</code> (your entire history plus a CI token). Nothing "executes" — it is all just files, readable by anyone who guesses a URL. <b>The fix:</b> a web root containing only public assets, deny rules for dotfiles and backups, and dev settings off in production.`,
   layers:[ {code:"L0",title:"Surface",meta:"the browser"},{code:"L1",title:"Client",meta:"URL bar"},
            {code:"L2",title:"Request",meta:"GET /path"},{code:"L3",title:"Edge",meta:"web server"},
            {code:"L4",title:"Server",meta:"static config"},{code:"L5",title:"Config",meta:"the setting"},
@@ -3026,6 +3055,7 @@ const LAB_COMPONENTS = {
   id:"components", code:"A06", cat:"Vulnerable & Outdated Components", title:"A 9-year-old markdown library",
   difficulty:"Practitioner",
   goal:"Your code is fine. The markdown library rendering profile bios is ancient — use its known flaw to run alert().",
+  notes:`Your code is fine — the 9-year-old markdown library is not. marked passes raw HTML through unchanged (true in <b>every</b> version), so a profile bio becomes stored XSS firing for every visitor. Updating the package does not close it. <b>The fix:</b> sanitize the output (e.g. DOMPurify) or disable inline HTML — plus an SBOM, so you always know what you are shipping.`,
   layers:[ {code:"L0",title:"Surface",meta:"profile bio"},{code:"L1",title:"Client",meta:"marked()"},
            {code:"L2",title:"Request",meta:"HTTP"},{code:"L3",title:"Edge",meta:"proxy"},
            {code:"L4",title:"Server",meta:"renders bio"},{code:"L5",title:"Deps",meta:"the SBOM"},
@@ -3125,6 +3155,7 @@ const LAB_AUTH = {
   id:"auth", code:"A07", cat:"Authentication Failures", title:"Username enumeration + no rate limit",
   difficulty:"Practitioner",
   goal:"Break into admin@aperture.lab. The login leaks which emails exist and never throttles your guesses.",
+  notes:`Two failures cooperate: the login answers differently for “no such email” and “wrong password” — a free enumeration oracle — and nothing throttles guesses. Harvest real accounts, then brute-force only those. <b>The fix:</b> one generic “invalid email or password” for both cases, plus rate limiting and lockout. The control that matters is <em>throttling</em>, not password complexity.`,
   layers:[ {code:"L0",title:"Surface",meta:"login"},{code:"L1",title:"Client",meta:"the form"},
            {code:"L2",title:"Request",meta:"POST /login"},{code:"L3",title:"Edge",meta:"no throttle"},
            {code:"L4",title:"Server",meta:"the errors"},{code:"L5",title:"Logic",meta:"enumeration"},
@@ -3248,6 +3279,7 @@ const LAB_JWT = {
   id:"jwt", code:"A08", cat:"Software & Data Integrity", title:"A JWT the server never verifies",
   difficulty:"Practitioner",
   goal:"Your session token says role=user. Make the server treat you as an admin by editing it.",
+  notes:`The server <em>decodes</em> the token but never <em>verifies</em> it, so the claims are a form the attacker fills in — <code>role: admin</code>. Decoding is not verifying: verification re-computes the signature with the secret and rejects anything altered (including every <code>alg:none</code> attempt). <b>The fix:</b> <code>jwt.decode(token, SECRET, algorithms=["HS256"])</code>.`,
   layers:[ {code:"L0",title:"Surface",meta:"your session"},{code:"L1",title:"Client",meta:"the token"},
            {code:"L2",title:"Request",meta:"Authorization"},{code:"L3",title:"Edge",meta:"proxy"},
            {code:"L4",title:"Server",meta:"decode"},{code:"L5",title:"Integrity",meta:"the signature"},
@@ -3364,6 +3396,7 @@ const LAB_LOGGING = {
   id:"logging", code:"A09", cat:"Logging & Monitoring Failures", title:"An account takeover nobody sees",
   difficulty:"Practitioner",
   goal:"Run the attack and watch the defenders’ screens: full takeover, and not one alert fires.",
+  notes:`The defender's side: 2,100 requests, an account takeover, a bulk export — and the dashboard shows <b>zero alerts</b> and one log line, because 401s were dropped “to keep logs tidy” and successes were logged without IP or user. The breach succeeds twice: technically, and by staying invisible. <b>The fix:</b> log auth failures with who/where/when, ship logs somewhere tamper-resistant, and alert on thresholds.`,
   layers:[ {code:"L0",title:"Surface",meta:"SOC dashboard"},{code:"L1",title:"Client",meta:"the attack"},
            {code:"L2",title:"Request",meta:"2,100 requests"},{code:"L3",title:"Edge",meta:"proxy logs"},
            {code:"L4",title:"Server",meta:"log config"},{code:"L5",title:"Monitor",meta:"alerting"},
@@ -3540,6 +3573,7 @@ const LAB_SSRF = {
   id:"ssrf", code:"A10", cat:"Server-Side Request Forgery", title:"“Import image from URL” fetches anything",
   difficulty:"Practitioner",
   goal:"The server fetches any URL you give it. Point it at the cloud metadata service and steal the app’s AWS keys.",
+  notes:`“Import image from URL” makes the server fetch whatever you say — with <b>its</b> network privileges. Your browser cannot reach the VPC; the server can: localhost admin panels, internal Redis, and the cloud metadata service that hands out the instance's AWS keys with no authentication. Address canonicalization (decimal, hex, IPv6-mapped) defeats string filters. <b>The fix:</b> allowlist destinations and block private/link-local ranges <em>after resolving</em>.`,
   layers:[ {code:"L0",title:"Surface",meta:"import by URL"},{code:"L1",title:"Client",meta:"browser"},
            {code:"L2",title:"Request",meta:"your URL"},{code:"L3",title:"Edge",meta:"proxy"},
            {code:"L4",title:"Server",meta:"fetches it"},{code:"L5",title:"Network",meta:"from inside"},
@@ -3740,6 +3774,7 @@ function validateLab(L, opts = {}){
   if (L.render && N) for (let i = 0; i < N; i++)
     need(typeof L.render[i] === "function", `render[${i}]: required function`);
   if (L.onFire) need(typeof L.onFire === "function", "onFire: must be a function (optional)");
+  if (L.notes) need(typeof L.notes === "string" && L.notes.length, "notes: HTML string — shown in the lab's Explanation popup (optional)");
   if (L.domMode) need(["parser", "innerHTML"].includes(L.domMode), 'domMode: "parser" | "innerHTML" (optional)');
   if (L.challenge){
     need(Array.isArray(L.challenge.steps) && L.challenge.steps.length, "challenge.steps: non-empty array");
@@ -3874,7 +3909,7 @@ scene.appendChild(callHost);
 
 let LAB = LABS[0];
 let planes = [], calls = [], tiers = [], planeDirty = [];
-const state = { q:"", active:0, cross:false, analysis:null, source:"boot", ix:false, alertSeen:null };
+const state = { q:"", active:0, cross:false, analysis:null, source:"boot", ix:false, alertSeen:null, showSpoilers:false };
 
 /* lab picker */
 function buildPicker(){
@@ -3896,7 +3931,7 @@ function buildLab(id){
   // reset scene
   planes.forEach(p => p.remove()); calls.forEach(c => c.remove());
   planes = []; calls = []; planeDirty = []; el("stackup").innerHTML = "";
-  state.ix = false; state.source = "boot"; state.alertSeen = null;
+  state.ix = false; state.source = "boot"; state.alertSeen = null; state.showSpoilers = false;
 
   LAB.layers.forEach((L, i) => {
     const p = document.createElement("section");
@@ -3947,6 +3982,10 @@ function buildLab(id){
   else
     ixBtn.title = "Intercept the lab's virtual request — edit the raw bytes, then send";
 
+  // per-lab explanation popup (bottom-right) — only when the lab has notes
+  el("exwrap").hidden = true;
+  el("explainBtn").hidden = !LAB.notes;
+
   // presets (solution presets stay locked until the lab is solved)
   rebuildConsole();
 
@@ -3955,17 +3994,28 @@ function buildLab(id){
 }
 
 /* Solution presets ("spoiler:true") stay hidden until the lab is solved —
-   the student earns them. Everything else stays a guided example. */
-function visiblePresets(){ return LAB.presets.filter(p => !p.spoiler || labUnlocked(LAB)); }
+   the student earns them — but "Show response" reveals them on demand,
+   clearly marked as answers. Everything else stays a guided example. */
+function visiblePresets(){
+  return LAB.presets.filter(p => !p.spoiler || labUnlocked(LAB) || state.showSpoilers);
+}
 let consoleKey = "";
 function rebuildConsole(){
+  const unlocked = labUnlocked(LAB);
+  const hiddenAnswers = !unlocked && LAB.presets.some(p => p.spoiler);
   el("presets").innerHTML = visiblePresets().map(p =>
-    `<button class="pre" data-q="${esc(p.q)}"><span>${esc(clip(p.q, 32))}</span><small>${esc(p.label)}</small></button>`).join("");
-  consoleKey = LAB.id + ":" + labUnlocked(LAB);
+    `<button class="pre ${p.spoiler && !unlocked ? "answer" : ""}" data-q="${esc(p.q)}"><span>${esc(clip(p.q, 32))}</span><small>${esc(p.label)}${p.spoiler && !unlocked ? " · answer" : ""}</small></button>`).join("")
+    + (hiddenAnswers ? `<button class="pre showresp" id="showResp" aria-pressed="${state.showSpoilers}">${state.showSpoilers ? "Hide response" : "Show response"}</button>` : "");
+  consoleKey = LAB.id + ":" + unlocked + ":" + state.showSpoilers;
 }
 
 el("presets").addEventListener("click", e => {
   const b = e.target.closest(".pre"); if (!b) return;
+  if (b.id === "showResp"){
+    state.showSpoilers = !state.showSpoilers;
+    rebuildConsole(); paintHud();
+    return;
+  }
   fire(b.dataset.q, "preset");
 });
 
@@ -4439,8 +4489,20 @@ function parseRaw(raw){
   } catch (err){ return { error:"Couldn't parse: " + err.message }; }
 }
 
+/* ── EXPLANATION POPUP ── */
+el("explainBtn").addEventListener("click", () => {
+  if (!LAB.notes) return;
+  el("exCat").textContent = LAB.code + " · " + LAB.cat;
+  el("exTitle").textContent = LAB.title;
+  el("exBody").innerHTML = LAB.notes;
+  el("exwrap").hidden = false;
+});
+el("exClose").addEventListener("click", () => { el("exwrap").hidden = true; });
+el("exwrap").addEventListener("click", e => { if (e.target === el("exwrap")) el("exwrap").hidden = true; });
+
 /* ── INPUT ── */
 addEventListener("keydown", e => {
+  if (!el("exwrap").hidden){ if (e.key === "Escape") el("exwrap").hidden = true; return; }
   if (!ixWrap.hidden){ if (e.key === "Escape") ixWrap.hidden = true; return; }
   if (el("labview").hidden) return;   // inert on the catalog
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || "");
@@ -4531,6 +4593,42 @@ function buildHome(){
         <div class="lc-strip"><span class="lc-go">Authoring docs ›</span></div>
       </button>
     </div></section>
+    <section class="notes">
+  <h2>How STRATA works</h2>
+  <p class="lede">STRATA turns a vulnerable app into a cross-section you fly through: seven planes stacked in depth, all rendering the same request at once. Fourteen labs ship in this file — Foundations, the OWASP Top 10, and the injection set — and the catalog takes any number more: a lab file is a plain <code>.js</code> away (see the authoring guide). The same instrument teaches every bug class without changing its rules.</p>
+
+  <h3>These are real labs, not click-throughs</h3>
+  <p>Every lab carries <b>objectives</b> in the side rail — phases of the actual attack, from “break the literal” to “exfiltrate the table.” You complete them by making the engine say so, which means <em>typing the payload yourself</em> (or editing the raw request — more on that below). Hints reveal progressively, rung by rung, and the final rung shows the payload — but a solve earned that way is labeled. The preset that completes the final objective stays locked until you’ve solved the lab. Progress persists in your browser.</p>
+
+  <h3>The one rule that makes it teach</h3>
+  <p>Every byte that originated from the student is drawn in <b style="color:var(--taint)">amber</b>, at every layer, without exception. Nothing else in the interface is warm. You track your own payload from keystroke to query string to parser to DOM without being told where to look — and the moment amber stops being <em>data</em> and becomes <em>syntax</em> (SQL) or <em>markup</em> (HTML) is visible, not narrated.</p>
+
+  <div class="swatches">
+    <div class="sw"><i style="background:var(--taint)"></i><div><div class="n">Taint</div><div class="d">User-controlled bytes. The only warm hue in the system.</div></div></div>
+    <div class="sw"><i style="background:var(--signal)"></i><div><div class="n">Signal</div><div class="d">The instrument itself — chrome, labels, keywords.</div></div></div>
+    <div class="sw"><i style="background:var(--breach)"></i><div><div class="n">Breach</div><div class="d">A boundary crossed, a parser broken, a request blocked.</div></div></div>
+    <div class="sw"><i style="background:var(--ok)"></i><div><div class="n">Safe</div><div class="d">Data that stayed data. The baseline you’re breaking.</div></div></div>
+  </div>
+
+  <h3>Each lab has a different taint signature</h3>
+  <p>The reason the same seven planes teach four bugs is that the payload takes a <b>different path</b> through them each time. Fly to cross-section view (<kbd>⌥</kbd><kbd>space</kbd>) and the shape is legible at a glance:</p>
+  <ul>
+    <li><b>Lab 01 · SQL injection</b> — taint present at every layer; it crosses the <em>trust boundary</em> at the server’s f-string and is promoted from string data to SQL syntax at the parser. A hand-written lexer computes quote balance and comment position, so a lone <code>'</code> produces a real unterminated-literal error at a real offset.</li>
+    <li><b>Lab 02 · Reflected XSS</b> — taint present at every layer; the server reflects it unescaped into the response, and the HTML tokenizer promotes it from text to markup. Because it is parsed at page load, even a bare <code>&lt;script&gt;</code> runs.</li>
+    <li><b>Lab 03 · DOM XSS</b> — taint <em>tunnels through the client and skips the network entirely.</em> The payload lives in the URL fragment, which browsers never send, so the request, edge, and server planes go dark — the bug is a source→sink flow in client JS. And <code>&lt;script&gt;</code> written via <code>innerHTML</code> is built but never runs; you need a self-firing handler.</li>
+    <li><b>Lab 04 · Reflected XSS + WAF</b> — taint is stopped at the <em>edge</em> unless you slip past it. The filter is a blocklist, and the lesson is that its grammar (string matching) and the browser’s grammar (HTML tokenizing) disagree — <code>&lt;svg onload&gt;</code> is not on the list, and no finite list covers every tag and handler.</li>
+  </ul>
+
+  <h3>The engine is honest</h3>
+  <p>Under the surface, each lab runs a real analysis, not a lookup table. The XSS engine tokenizes the payload and distinguishes what auto-fires when server-reflected versus when written through <code>innerHTML</code>. The SQL lexer computes quote balance and comment offsets. The crypto lab runs a genuine MD5 (RFC 1321) against a wordlist hashed at load. The SSRF lab canonicalizes IPs — decimal, hex, octal-dropped, IPv6-mapped — before classifying them, so alternate spellings really do reach the metadata service. And the <b>intercept</b> toggle pauses the lab’s <em>virtual</em> request so you can edit the raw bytes Burp-style: the parser URL-decodes your edits exactly as an origin would. Nothing actually executes — the <code>alert()</code> on the surface is a simulated dialog once the engine has proven the vector would fire. Same philosophy everywhere: real reasoning, simulated effect. STRATA itself makes zero network requests.</p>
+
+  <h3>Infinite labs, humans and AI alike</h3>
+  <p>A lab is data: layers, presets, a pure <code>analyze()</code>, per-layer renderers, objectives, hints — one contract, validated and smoke-run on load. <code>STRATA.registerLab()</code> (exposed to lab files, documented in <code>docs/AUTHORING.md</code>) is the seam: drop a lab file onto the catalog to add it. That makes every workflow real — “build me a lab from this HackerOne report,” “harder XSS please,” “show me how this code gets exploited” — because the format, the validator, and the golden examples are all a person or an AI needs to author in this style.</p>
+
+  <h3>What a production build needs next</h3>
+  <p>A lab-manifest catalog on disk with a community index; a sandboxed backend for server-side labs (free-typed exploits against a real origin, not a simulation); per-layer <em>defense</em> annotations that light up green when a student patches the right plane — parameterize the query, escape the template, write to <code>textContent</code>; and progress sync. The layer engine, the taint renderer, the challenge system and the cross-section are the reusable core — everything else is lab content.</p>
+</section>
+
     <footer class="home-foot">Runs entirely in your browser — payloads are analyzed, never executed · progress lives in localStorage</footer>
   </div>`;
   [...el("home").querySelectorAll(".labcard")].forEach(b =>
@@ -4562,6 +4660,7 @@ function enterLab(id){
   clearTimeout(enterLab._t);
   el("home").hidden = true;
   el("labview").hidden = false;
+  document.body.classList.add("in-lab");
   buildLab(id);
   window.scrollTo(0, 0);
   if (!reduced){
@@ -4571,7 +4670,9 @@ function enterLab(id){
 }
 function goHome(){
   el("labview").hidden = true;
+  el("exwrap").hidden = true;
   el("home").hidden = false;
+  document.body.classList.remove("in-lab");
   window.scrollTo(0, 0);
 }
 el("homeBtn").addEventListener("click", goHome);

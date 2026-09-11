@@ -110,6 +110,11 @@ STRATA.registerLab({
   //   for your lab. Set "innerHTML" for DOM-sink labs (the built-in xss-dom
   //   lab sets it implicitly).
 
+  // ── explanation (optional but expected) ────────────────────────
+  // notes: HTML string shown in the lab's bottom-right "Explanation"
+  //   popup — the bug in plain words + the one-line fix. Two to five
+  //   sentences. Keep the deep dive on the layers; this is the summary.
+
   // ── catalog card (optional for external labs) ──────────────────
   card: { sig: ["a","a","a","a","x","x","a"],           // per-layer preview strip
           blurb: "One or two sentences, may use <code>…</code>" },
