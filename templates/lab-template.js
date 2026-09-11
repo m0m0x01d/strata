@@ -127,4 +127,26 @@ STRATA.registerLab({
           d=absent · s=safe */
   card: { sig:["a","a","a","a","x","x","a"],
           blurb:"Two sentences for the catalog card. <code>code</code> allowed." }
+
+  /* ── DEFENDER EDITION (optional) ──────────────────────────────
+     Adds the lab to the Defender tab. vectors = attacks that MUST
+     breach the unpatched lab; options = candidate patches, where
+     apply(q) answers honestly per input (benign traffic → served,
+     attacks → dies at a layer, with the reason). At least one option
+     must block every vector, and at least one must fail some vector.
+     Full example: labs/xss-waf-plus.lab.js
+
+  defense: {
+    blurb: "Card copy for the Defender tab.",
+    vectors: [ { q: "the-attack", label: "what it does" } ],
+    options: [
+      { id: "the-fix", label: "The real fix", code: "the patched line",
+        apply(q){ return /attack-signature/.test(q)
+          ? { blocked: true, at: 4, why: "…" }
+          : { blocked: false, at: null, why: "served normally" }; } },
+      { id: "the-non-fix", label: "A tempting non-fix", code: "…",
+        apply(q){ return { blocked: false, at: 5, why: "why it fails" }; } }
+    ]
+  },
+*/
 });

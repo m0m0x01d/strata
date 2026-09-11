@@ -15,10 +15,11 @@ file*). The validator smoke-runs your engine before the lab is accepted.
 > **Trust model:** a lab file is *local code* with the page's full
 > privileges — same trust level as opening any HTML file. Validation checks
 > **shape, not safety**; it exists to catch authoring mistakes, not to
-> sandbox hostile labs. Only load files you trust. Keep this in mind before
-> any community catalog exists.
+> sandbox hostile labs. Only load files you trust. Keep this in mind even with the
+> built-in shelf: the shelf hash-verifies and sandboxes — a file you drop
+> in by hand does neither.
 
-The best documentation is the source: `strata.html` contains 14 golden-reference
+The best documentation is the source: `strata.html` contains 17 golden-reference
 labs. Read `LAB_SQLI` (the canonical attack lab), `LAB_FOUNDATIONS` (a guided
 tour, not an attack), and `LAB_SSRF` (free-typed engine with real parsing).
 
@@ -293,7 +294,7 @@ inside a **sandboxed worker** — no DOM, no `localStorage`, no network from
 the lab, and everything it renders is sanitized on the way back in. For
 sandbox compatibility: no `domMode`, and custom `wire.build`/`parse`
 disable intercept (the standard wire types work). The worker ships the
-same helper surface as `STRATA.helpers` on the page.
+helper surface of `STRATA.helpers` plus the engine internals labs sometimes reach for (`shellScan`, `csrfScan`, `parseIPv4`, `classifyHost`, `hostOf`, `normalizePath`, `resolveUnder`, …).
 
 **Optional CLI** (the app itself never needs it):
 

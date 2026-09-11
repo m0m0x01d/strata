@@ -5,7 +5,7 @@
    hash      <file>…       print SHA-256 (for catalog.json entries)
    catalog                re-hash every labs/*.lab.js into labs/catalog.json
    check                  syntax-check the engine + run the built-in smoke */
-import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync, unlinkSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { dirname, join, basename } from "node:path";
@@ -90,10 +90,10 @@ else if (cmd === "catalog"){
 else if (cmd === "check"){
   const html = readFileSync(HTML, "utf8");
   const script = html.match(/<script>\n([\s\S]*)<\/script>/)[1];
-  const probe = join(ROOT, ".cli-check.mjs");
-  writeFileSync(probe, script ? "export const n = 1;" : "");
-  execFileSync(process.execPath, ["--check", (() => { const p = join(ROOT, ".engine-check.js"); writeFileSync(p, script); return p; })()],
-    { stdio: "inherit" });
+  const tmp = join(process.env.TMPDIR || "/tmp", "strata-engine-check.js");
+  writeFileSync(tmp, script);
+  try { execFileSync(process.execPath, ["--check", tmp], { stdio: "inherit" }); }
+  finally { try { unlinkSync(tmp); } catch(_){} }
   console.log("engine syntax OK");
 }
 

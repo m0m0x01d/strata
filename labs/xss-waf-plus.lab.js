@@ -45,7 +45,7 @@ STRATA.registerLab({
   challenge:{ steps:[
     { id:"blocked", label:"Watch the blocklist say no", test:a => !!a.waf.blocked,
       hints:["Send the classic payloads first — seeing the wall is step one.",
-             "<script>alert(1)</script>"],
+             "<script>alert(1)<\/script>"],
       reveal:"<script>alert(1)<\/script>" },
     { id:"bypass", label:"Fire alert() with zero banned tags", test:a => !!a.fires,
       hints:["The blocklist bans TAGS. The tokenizer accepts 110+ elements and never read the list.",
@@ -132,11 +132,14 @@ STRATA.registerLab({
             ? { blocked:true, at:4, why:"Whatever slips the edge now arrives at the tokenizer pre-neutralized — &lt;details&gt; is visible text. Both vectors die at the same line, and the WAF becomes optional." }
             : { blocked:false, at:null, why:"Served normally — text and harmless markup render exactly as before." }; } },
       { id:"add-details", label:"Add <details> to the blocklist", code:"deny <script|img|svg|iframe|object|embed|details",
-        apply(q){ return /<details\b/i.test(q)
-          ? { blocked:true, at:3, why:"details dies — and <body onload> never needed it. The list grew by one; the grammar didn't shrink." }
-          : { blocked:false, at:5, why:"body onload was never on any list. Your bytes become an element + handler two layers past the filter." }; } },
+        apply(q){ const s = String(q);
+          if (/^<\s*details\b/i.test(s)) return { blocked:true, at:3, why:"details dies — and <body onload> never needed it. The list grew by one; the grammar didn't shrink." };
+          if (/^<\s*body\b/i.test(s)) return { blocked:false, at:5, why:"body onload was never on any list. Your bytes become an element + handler two layers past the filter." };
+          return { blocked:false, at:null, why:"No banned tag in it — served normally." }; } },
       { id:"httponly", label:"Set the session cookie HttpOnly", code:"Set-Cookie: session=…; HttpOnly; Secure",
-        apply(){ return { blocked:false, at:6, why:"HttpOnly hides the cookie from script — a real mitigation for cookie theft, not for injection. The alert fires, the DOM is theirs, keylogging works. Wrong layer, real flag." }; } },
+        apply(q){ let fires = false; try { fires = scanVectors(String(q), "parser").some(v => v.fires); } catch(_){}
+          if (fires) return { blocked:false, at:6, why:"HttpOnly hides the cookie from script — a real mitigation for cookie theft, not for injection. The alert fires, the DOM is theirs, keylogging works. Wrong layer, real flag." };
+          return { blocked:false, at:null, why:"Nothing fires here — and when something does, HttpOnly still won't stop it." }; } },
       { id:"allowlist", label:"Reject input containing < entirely", code:'if (q.includes("<")) return 400',
         apply(q){ return q.includes("<")
           ? { blocked:true, at:4, why:"No markup can enter — both vectors die. Search is text-only on this endpoint, so the door can be this blunt." }

@@ -1,2 +1,4 @@
 backups/
 .DS_Store
+.engine-check.js
+.cli-check.mjs

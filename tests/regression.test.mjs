@@ -160,7 +160,7 @@ ok(T.safeHref("/account") === "/account", "safeHref: relative path kept");
 ok(T.safeHref("https://x.example/") === "https://x.example/", "safeHref: https kept");
 
 /* 10. the example lab still validates and plays (fixed backslash preset) */
-const file = readFileSync("/Users/m0m0x01d/strata-lab/labs-example/open-redirect.lab.js", "utf8");
+const file = readFileSync(new URL("../labs/open-redirect.lab.js", import.meta.url).pathname, "utf8");
 let captured = null;
 globalThis.STRATA = { registerLab(l){ captured = l; } };
 new Function(script.slice(0, shellAt) + ";globalThis.STRATA={registerLab(l){globalThis.__cap=l;}};" + file)();

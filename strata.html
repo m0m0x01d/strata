@@ -1250,6 +1250,7 @@ select.labsel option{background:var(--strata); color:var(--ink)}
 }
 .fab:hover{border-color:var(--signal); color:var(--ink)}
 .fab[hidden]{display:none}
+.pill[hidden]{display:none}   /* .pill sets a display, which would defeat the hidden attribute */
 .exwrap{position:fixed; inset:0; z-index:70; display:grid; place-items:center;
   background:color-mix(in srgb, var(--void) 66%, transparent); backdrop-filter:blur(2px)}
 .exwrap[hidden]{display:none}
@@ -2022,9 +2023,13 @@ const LAB_SQLI = {
           ? { blocked:true, at:5, why:"'' is an escaped quote inside the literal — the string never terminates early, so the UNION stays text inside the quotes. (Charset confusion is this fix's real-world footnote; parameterizing has none.)" }
           : { blocked:false, at:null, why:"No quotes — nothing to escape; the value stays data. (Numeric injections elsewhere are why parameterizing is better.)" }; } },
       { id:"hide-errors", label:"Hide SQL errors from users", code:"except DBError: return generic_500()",
-        apply(){ return { blocked:false, at:5, why:"Quieter, not safer. The UNION executes and its rows still render in the page — you hid the error message, not the injection." }; } },
+        apply(q){ return /'/.test(String(q))
+          ? { blocked:false, at:5, why:"Quieter, not safer. The UNION executes and its rows still render in the page — you hid the error message, not the injection." }
+          : { blocked:false, at:null, why:"An ordinary search — served, with a quieter error page. The patch only ever touched the error path." }; } },
       { id:"limit", label:"Append LIMIT 1 to the query", code:'sql = f"… WHERE name LIKE \'%{q}%\' LIMIT 1"',
-        apply(){ return { blocked:false, at:6, why:"LIMIT 1 caps the output — one leaked row is still a leak. The attacker adds -- and reads row by row." }; } }
+        apply(q){ return /'/.test(String(q))
+          ? { blocked:false, at:6, why:"LIMIT 1 caps the output — one leaked row is still a leak. The attacker adds -- and reads row by row." }
+          : { blocked:false, at:null, why:"One row, as requested — the limit and the search agree." }; } }
     ]
   },
 
@@ -2297,11 +2302,12 @@ const LAB_REFLECTED = {
           ? { blocked:true, at:4, why:"The tags leave the server pre-neutralized: the browser sees visible text that SPELLS a payload. All three vectors become decorations." }
           : { blocked:false, at:null, why:"Plain text — served unchanged. Escaping only rewrites the characters that would become markup." }; } },
       { id:"strip-script", label:"Strip <script> pairs", code:'q = q.replace(/<script[\\s\\S]*?<\\/script>/gi, "")',
-        apply(q){ const cleaned = q.replace(/<script[\s\S]*?<\/script\s*>/gi, "");
+        apply(q){ if (!/<script/i.test(String(q))) return { blocked:false, at:null, why:"No script node in it — served exactly as before." };
+          const cleaned = String(q).replace(/<script[\s\S]*?<\/script\s*>/gi, "");
           let fires = false; try { fires = LAB_REFLECTED.analyze(cleaned).fires; } catch(_){ fires = false; }
           return fires
             ? { blocked:false, at:5, why:"Two of these payloads never contained a <script> — handlers were the vector. Removing script nodes stops exactly one of three." }
-            : { blocked:true, at:4, why:"The script node is gone — but the payload class isn't. This fix survives only payloads you thought of first." }; } },
+            : { blocked:true, at:4, why:"The script node is gone — this payload dies. But it died to a patch that only knows the payloads you thought of first." }; } },
       { id:"csp", label:"CSP: script-src 'self'", code:"Content-Security-Policy: script-src 'self'",
         apply(q){ return /<script\b|\son[a-z]+\s*=/i.test(String(q))
           ? { blocked:true, at:3, why:"Inline script AND inline handlers are refused — the vectors die at the browser door. One caveat: add 'unsafe-inline' anywhere and this header becomes decoration." }
@@ -2437,11 +2443,12 @@ const LAB_DOM = {
             ? { blocked:true, at:1, why:"Tags may survive; handlers never do. Both vectors lose their on* attribute at the same line." }
             : { blocked:false, at:null, why:"Harmless markup — the allowlist passes it." }; } },
       { id:"strip-script", label:"Strip <script> pairs", code:'fragment = fragment.replace(/<script[\\s\\S]*?<\\/script>/gi, "")',
-        apply(q){ const cleaned = q.replace(/<script[\s\S]*?<\/script\s*>/gi, "");
+        apply(q){ if (!/<script/i.test(String(q))) return { blocked:false, at:null, why:"No script node in it — the strip never had anything to do." };
+          const cleaned = String(q).replace(/<script[\s\S]*?<\/script\s*>/gi, "");
           let fires = false; try { fires = LAB_DOM.analyze(cleaned).fires; } catch(_){ fires = false; }
           return fires
             ? { blocked:false, at:6, why:"This lab's own lesson: script nodes written via innerHTML were ALREADY inert — the handlers were the live vector. This patch removes the part that never worked." }
-            : { blocked:true, at:1, why:"Nothing fires — but only because this input had no handlers." }; } }
+            : { blocked:true, at:1, why:"Nothing left that fires — for inputs shaped exactly like this one." }; } }
     ]
   },
 
@@ -2579,9 +2586,10 @@ const LAB_WAF = {
             ? { blocked:true, at:4, why:"Whatever slips the edge now renders as text. The WAF becomes irrelevant — this is the only patch that makes the edge's job optional." }
             : { blocked:false, at:null, why:"Served normally — markup that can't self-fire renders just like before." }; } },
       { id:"extend-blocklist", label:"Extend the WAF blocklist (svg, details)", code:"deny <svg, <details, <iframe …",
-        apply(q){ return /<body\b/i.test(q)
-          ? { blocked:false, at:5, why:"svg and details die — and <body onload> was next. You added three tags to a list the HTML grammar answers with infinity. This is whack-a-mole, and the mole has the schedule." }
-          : { blocked:true, at:3, why:"Blocked at the edge — this time, for these tags." }; } },
+        apply(q){ const s = String(q);
+          if (/^<\s*body\b/i.test(s)) return { blocked:false, at:5, why:"body onload was never on any list — your bytes become an element + handler two layers past the filter." };
+          if (/<\s*(script|img|svg|iframe|object|embed|details)\b/i.test(s)) return { blocked:true, at:3, why:"Blocked at the edge — svg and details are on the list now. Feel how the list grew by two and the grammar didn't shrink." };
+          return { blocked:false, at:null, why:"No banned tag in it — served normally. The blocklist and this search never met." }; } },
       { id:"handler-rule", label:"Edge rule: drop all on* handlers", code:"deny /\son[a-z]+\s*=/i in the query string",
         apply(q){ return /\son[a-z]+\s*=/i.test(q)
           ? { blocked:true, at:3, why:"Every vector here carries an on* attribute — the rule catches the handler GRAMMAR, not a tag list, so it holds wider. (Interactive vectors like onpointerover are why origin escaping is still the real fix.)" }
@@ -2884,7 +2892,9 @@ const LAB_IDOR = {
           ? { blocked:false, at:null, why:"Your own row — a UUID serves it exactly like an int." }
           : { blocked:true, at:6, why:"Enumeration needs guessable keys; a v4 UUID is 5.3×10^36 tries per row. The check is still missing — but nobody can name the row. (If an id ever leaks once, this buys nothing: leaks are forever.)" }; } },
       { id:"hide-ui", label:"Hide other accounts in the UI", code:"// the account picker only lists your own",
-        apply(){ return { blocked:false, at:2, why:"The API never cared what the UI lists. GET /api/account?id=1002 still answers — you moved a menu, not the boundary." }; } },
+        apply(q){ return String(q).trim() === "1001"
+          ? { blocked:false, at:null, why:"Your account — the UI you're allowed to see." }
+          : { blocked:false, at:2, why:"The API never cared what the UI lists. GET /api/account?id=1002 still answers — you moved a menu, not the boundary." }; } },
       { id:"ratelimit", label:"Rate-limit account lookups", code:"3 requests/second per session",
         apply(){ return { blocked:false, at:3, why:"At 3/second the walk from 1000 to 1002 takes under a second. Throttling blunts mass enumeration; it does not add the missing check." }; } }
     ]
@@ -3590,7 +3600,9 @@ const LAB_JWT = {
           ? { blocked:false, at:null, why:"The session knows your role — nothing to override." }
           : { blocked:true, at:5, why:"The token may CLAIM anything; the console checks what the session already knows. Forged claims become suggestions." }; } },
       { id:"long-secret", label:"Rotate to a 64-char secret", code:'SECRET = "x".repeat(64)',
-        apply(){ return { blocked:false, at:4, why:"Key length polices brute force against a verification that does not exist. The unsigned token still decodes; the role still sticks." }; } }
+        apply(q){ return String(q).trim() === "user"
+          ? { blocked:false, at:null, why:"Your token — decodes and works, exactly as before." }
+          : { blocked:false, at:4, why:"Key length polices brute force against a verification that does not exist. The unsigned token still decodes; the role still sticks." }; } }
     ]
   },
 
@@ -3897,20 +3909,23 @@ const LAB_SSRF = {
       {q:"http://0xA9FEA9FE/latest/meta-data/iam/security-credentials/", label:"metadata, hex IP"}
     ],
     options:[
-      { id:"allowlist", label:"Allowlist public image hosts", code:'ALLOW = ["images.aperture.cdn"]\\nif (host of url) not in ALLOW: refuse',
+      { id:"allowlist", label:"Allowlist public image hosts", code:`ALLOW = ["images.aperture.cdn"]
+if (host of url) not in ALLOW: refuse`,
         apply(q){ return /images\.aperture\.cdn/i.test(String(q))
           ? { blocked:false, at:null, why:"The CDN host — imported, resized, same as always." }
           : { blocked:true, at:4, why:"The fetcher only ever talks to the CDN. Every spelling of every internal address dies at the same line — this is the strongest SSRF fix there is." }; } },
-      { id:"post-resolve", label:"Resolve, then classify the IP", code:"ip = dns.resolve(host)\\nif is_internal(ip): refuse",
+      { id:"post-resolve", label:"Resolve, then classify the IP", code:`ip = dns.resolve(host)
+if is_internal(ip): refuse`,
         apply(q){ let internal = false; try { internal = !!LAB_SSRF.analyze(q).internal; } catch(_){}
           return internal
             ? { blocked:true, at:4, why:"The resolver reads the number, not the spelling: 2852039166, 0xA9FEA9FE and evil.example@… all collapse to 169.254.169.254 before the classifier says link-local. (DNS rebinding is this fix's real-world footnote — pin the IP you checked.)" }
             : { blocked:false, at:null, why:"A public host — fetched and imported normally." }; } },
       { id:"blocklist", label:"Blocklist the strings", code:'deny /169\\.254|127\\.0\\.0\\.1|localhost|^10\\./ in the URL',
         apply(q){ const s = String(q);
-          return /169\.254|127\.0\.0\.1|localhost|^10\./.test(s)
-            ? { blocked:true, at:3, why:"Blocked — this spelling matched. Savor it: it's the only one of four that did." }
-            : { blocked:false, at:4, why:"The blocklist read the spelling; the resolver read the number. 2852039166 IS 169.254.169.254, and the @dress hides it twice over. The request sails through and the keys ship out." }; } },
+          if (/169\.254|127\.0\.0\.1|localhost|^10\./.test(s)) return { blocked:true, at:3, why:"Blocked — this spelling matched. Savor it: it's the only spelling of four that did." };
+          let internal = false; try { internal = !!LAB_SSRF.analyze(s).internal; } catch(_){}
+          if (internal) return { blocked:false, at:4, why:"The blocklist read the spelling; the resolver read the number: 2852039166 IS 169.254.169.254, and so is 0xA9FEA9FE. The request sails through and the keys ship out." };
+          return { blocked:false, at:null, why:"A public host — imported normally, blocklist none the wiser." }; } },
       { id:"imdsv2", label:"Require a metadata session token", code:"# cloud-init: HttpTokens=required (IMDSv2)",
         apply(q){ return /\/meta-data\//i.test(String(q))
           ? { blocked:true, at:5, why:"The requests still arrive — and the metadata service answers them with nothing. A token the import-fetcher never sends is now required for every response. Defense in depth done right." }
@@ -4214,14 +4229,16 @@ const LAB_CMDI = {
           ? { blocked:false, at:null, why:"This input is a legal hostname — but it contains no operator, so the ping is all that runs." }
           : { blocked:true, at:4, why:"Rejected: operators and quotes are not valid hostname characters." }; } },
       { id:"quote", label:"Wrap the input in quotes", code:`os.system(f'ping -c1 "{host}"')`,
-        apply(q){ return q.includes('"')
-          ? { blocked:false, at:5, why:"A \" in the input closes the server's own quote — everything after it is shell source again." }
-          : { blocked:false, at:null, why:"Inside double quotes your bytes are one argument — the ping resolves or fails, nothing more. It holds for exactly these vectors. It is a shield that shatters on one character — don't ship it." }; } },
+        apply(q){ const s = String(q);
+          if (s.includes('"')) return { blocked:false, at:5, why:"A \" in the input closes the server's own quote — everything after it is shell source again." };
+          if (/[`$]/.test(s) && shellScan(s)) return { blocked:false, at:5, why:"Backticks and $() still execute inside double quotes — quoting neutralizes separators, not substitutions." };
+          if (shellScan(s)) return { blocked:true, at:5, why:"The operators arrive inside one literal argument — ; | && stop being syntax. It holds for exactly these spellings; one \" or one $() shatters it. Don't ship it." };
+          return { blocked:false, at:null, why:"A plain ping — quoting changed nothing for honest input." }; } },
       { id:"strip", label:"Strip dangerous operators", code:"host = re.sub(\"[;&|`\\n\", \"\", host)",
-        apply(q){ const cleaned = q.replace(/[;&|`\n]/g, "");
-          return cleaned === q
-            ? { blocked:false, at:5, why:"Nothing to strip — backticks and $() were never in the blocklist, and they still parse." }
-            : { blocked:true, at:4, why:"Stripped — but strip-lists are whack-a-mole: the list must beat every operator the shell knows." }; } }
+        apply(q){ const s = String(q); const cleaned = s.replace(/[;&|`\n]/g, "");
+          if (cleaned === s && shellScan(s)) return { blocked:false, at:5, why:"Nothing to strip — $( ) was never in the blocklist, and the shell runs what it builds." };
+          if (cleaned === s) return { blocked:false, at:null, why:"No operators in it — served." };
+          return { blocked:true, at:4, why:"Stripped — but strip-lists are whack-a-mole: the list must beat every operator the shell knows, and ( ) weren't on it." }; } }
     ]
   }
 };
@@ -4377,22 +4394,20 @@ const LAB_LFI = {
             ? { blocked:true, at:5, why:"Resolution still happens — but the check compares the RESULT against the real docs root, so every spelling that ends outside dies here." }
             : { blocked:false, at:null, why:"Inside the root — served, correctly." }; } },
       { id:"reject-dots", label:"Reject inputs containing ..", code:`if ".." in f: abort(400)`,
-        apply(q){ return q.includes("..")
-          ? { blocked:true, at:4, why:"Rejected before any filesystem call — all the ..-based climbs die, including the ....// spelling (it contains ..)." }
-          : { blocked:false, at:null, why:"No .. in it — but an ABSOLUTE path never needed dots in the first place." }; } },
+        apply(q){ const r = resolveUnder("docs", String(q));
+          if (String(q).includes("..")) return { blocked:true, at:4, why:"Rejected before any filesystem call — every ..-based climb dies, including the ....// spelling (it contains ..)." };
+          if (r.absolute || r.escaped) return { blocked:false, at:5, why:"No .. in it — but an ABSOLUTE path never needed dots in the first place, and the join hands the FS a full path." };
+          return { blocked:false, at:null, why:"A doc in the web root — served." }; } },
       { id:"strip-dots", label:"Strip ../ occurrences", code:`f = f.replace("../", "")`,
-        apply(q){ const cleaned = q.split("../").join("");
-          if (cleaned !== q){
-            // ....// survives a single-pass replace: removing "../" leaves "../"
+        apply(q){ const s = String(q); const cleaned = s.split("../").join("");
+          if (cleaned !== s){
             const r2 = resolveUnder("docs", cleaned);
-            return r2.escaped
-              ? { blocked:false, at:5, why:"One replace pass is not enough: ....// contains ../ twice-overlapping — strip it and ../ is what remains." }
-              : { blocked:true, at:4, why:"Stripped, and what survived resolves inside the root." };
+            if (r2.escaped) return { blocked:false, at:5, why:"One replace pass is not enough: ....// contains ../ twice-overlapping — strip it and ../ is what remains." };
+            return { blocked:true, at:4, why:"Stripped, and what survived resolves inside the root." };
           }
-          const r = resolveUnder("docs", q);
-          return r.escaped
-            ? { blocked:false, at:5, why:"Nothing to strip — the absolute path never used ../ and the join handed the FS a full path." }
-            : { blocked:false, at:null, why:"Nothing dangerous in it — served." }; } },
+          const r = resolveUnder("docs", s);
+          if (r.escaped) return { blocked:false, at:5, why:"Nothing to strip — the absolute path never used ../ and the join handed the FS a full path." };
+          return { blocked:false, at:null, why:"Nothing dangerous in it — served." }; } },
       { id:"allowmap", label:"Serve from an object map", code:`FILES = {"intro.txt": …, "roadmap.txt": …}\nreturn FILES.get(f) or abort(404)`,
         apply(q){ return DOCS_FILES[q.trim()] != null || q.trim() === "intro.txt"
           ? { blocked:false, at:null, why:"A known doc — served from memory. No path, no filesystem, no language to abuse." }
@@ -4571,7 +4586,9 @@ const LAB_CSRF = {
       { id:"https", label:"Secure + HttpOnly cookie flags", code:`Set-Cookie: session=…; Secure; HttpOnly`,
         apply(){ return { blocked:false, at:4, why:"Good hygiene — against a DIFFERENT attack. The victim's browser is on HTTPS; the cookie is attached with full honors; the flags say nothing about who asked for the request." }; } },
       { id:"amount", label:"Validate the amount server-side", code:`amount = int(request.form["amount"])\nassert 0 < amount <= 5000`,
-        apply(){ return { blocked:false, at:4, why:"$5,000 passes validation — it's a perfectly legal transfer. Nothing about this request is malformed; that's the whole problem." }; } }
+        apply(q){ let fires = false; try { fires = csrfScan(q).fires; } catch(_){}
+          if (fires) return { blocked:false, at:4, why:"$5,000 passes validation — it's a perfectly legal transfer. Nothing about this request is malformed; that's the whole problem." };
+          return { blocked:false, at:null, why:"A page with no forged request — nothing to validate, nothing sent." }; } }
     ]
   }
 };
@@ -4603,7 +4620,9 @@ const SEV = {
   ssrf:          ["CRIT",  "9.8"],  // cloud metadata → account keys
   cmdi:          ["CRIT",  "9.8"],
   lfi:           ["HIGH",  "7.7"],  // /etc/passwd + DB creds
-  csrf:          ["HIGH",  "8.8"]   // financial state change
+  csrf:           ["HIGH",  "8.8"],  // financial state change
+  "open-redirect": ["MED",  "6.1"],  // phishing vector, no direct impact
+  "xss-waf-plus":  ["MED",  "6.1"]
 };
 const SEV_CLS = { CRIT:"crit", HIGH:"high", MED:"med", LOW:"low" };
 
@@ -4840,7 +4859,10 @@ window.STRATA = {
     const existing = LABS.findIndex(x => x.id === lab?.id);
     const v = validateLab(lab, { allowReplace: existing >= 0 });
     if (!v.ok){ showLabErrors(`Lab "${lab && lab.id ? lab.id : "?"}" failed validation`, v.errs); return false; }
-    if (existing >= 0) LABS.splice(existing, 1, lab);   // reload = replace, so authors can iterate
+    if (existing >= 0){
+      if (LABS[existing]._worker) LABS[existing]._worker.terminate();   // an orphaned worker keeps posting
+      LABS.splice(existing, 1, lab);   // reload = replace, so authors can iterate
+    }
     else LABS.push(lab);
     buildPicker(); buildHome();   // earned progress is kept across reloads
     if (!opts.silent){ toast(`Lab loaded: ${lab.code} · ${lab.title}`); enterLab(lab.id); }
@@ -4883,11 +4905,9 @@ buildPicker();
 
 function buildLab(id, mode){
   LAB = LABS.find(l => l.id === id) || LABS[0];
-  if (mode) state.mode = mode;
+  state.mode = mode || "attack";   // async registerLab/shelf entries carry no mode — never inherit
   if (state.mode === "defend" && !LAB.defense) state.mode = "attack";   // the picker can land anywhere
   state.deployedPatch = null; state.patched = null;
-  el("labview").classList.toggle("defend", state.mode === "defend");
-  el("labview").classList.remove("defended");
   // innerHTML-sink labs mark their DOM trees differently (script nodes are inert)
   window.__mode = (LAB.domMode === "innerHTML" || LAB.id === "xss-dom") ? "innerHTML" : "parser";
   fillGen++;   // cancels any lazy-fill chain still running for the previous lab
@@ -4897,6 +4917,9 @@ function buildLab(id, mode){
   planes = []; calls = []; planeDirty = []; el("stackup").innerHTML = "";
   state.ix = false; state.source = "boot"; state.alertSeen = null; state.showSpoilers = false;
   state.deployedPatch = null; state.patched = null;
+  composing = false;                    // a mid-IME input can die without compositionend
+  clearTimeout(enterLab._t);            // a pending intro must not flip the next lab's view
+  ixWrap.hidden = true;                 // never carry an open intercept into a new lab
 
   LAB.layers.forEach((L, i) => {
     const p = document.createElement("section");
@@ -5320,7 +5343,13 @@ function refreshDefense(a){
 }
 el("defList").addEventListener("click", e => {
   const b = e.target.closest("[data-opt]"); if (!b) return;
-  if (!b.dataset.opt){ state.deployedPatch = null; refreshDefense(state.analysis); return; }
+  if (!b.dataset.opt){
+    state.deployedPatch = null;
+    recomputePatched(state.q);
+    renderPlane(0); bindSurface(); layout(); paintHud();
+    refreshDefense(state.analysis);
+    return;
+  }
   state.deployedPatch = b.dataset.opt;
   run(LAB.defense.vectors[0].q, { source:"preset" });   // paints + re-renders the panel
 });
@@ -5384,8 +5413,9 @@ function doLive(){
 function scheduleLive(){
   if (liveQueued) return;
   liveQueued = true;
+  const gen = fillGen;                  // a lab switch must cancel the queued paint
   let done = false;
-  const go = () => { if (done) return; done = true; doLive(); };
+  const go = () => { if (done) return; done = true; if (gen === fillGen) doLive(); };
   requestAnimationFrame(go);        // preferred: coalesced to a frame
   setTimeout(go, 250);              // rAF stalls in hidden tabs — the lab must not
 }
@@ -5476,6 +5506,10 @@ function openIx(q){
   }
   if (LAB.wire.type === "offline"){
     toast("This lab runs offline — a scenario replays; no live request exists.");
+    return;
+  }
+  if (LAB.wire.custom){
+    toast("This sandboxed lab built its own wire format — the intercept can't rebuild it.");
     return;
   }
   ixRaw.value = buildRaw(q); ixErr.textContent = ""; ixWrap.hidden = false; ixRaw.focus();
@@ -5694,7 +5728,7 @@ function buildHome(){
           <div class="cardgrid">${ls.map(card).join("")}</div></section>`;
       }).join("")
     : `<section class="track"><h2 class="track-h">Defender editions<span class="tcount">none loaded yet</span></h2>
-       <p style="color:var(--dim);padding:14px 2px">No labs with defense data are loaded. The built-in defender editions cover the access-control and injection sets.</p></section>`;
+       <p style="color:var(--dim);padding:14px 2px">No labs with defense data are loaded. The built-in defender editions cover the access-control, injection, integrity and forgery sets.</p></section>`;
 
   /* the mini cross-section: six planes, the bug layer lit amber, your
      payload falling through the stack — the whole product in one glance */
@@ -5748,7 +5782,7 @@ function buildHome(){
             : `<span class="stat"><b>${LABS.length}</b> labs</span>
                <span class="stat"><b>7</b> layers each</span>
                <span class="stat"><b>0</b> dependencies</span>
-               <span class="stat"><b>0</b> network calls</span>`}
+               <span class="stat" title="the opt-in community shelf is the only exception">0 network calls</span>`}
           ${totalSolved ? `<span class="stat taint"><b>${totalSolved}</b> solved by you</span>` : ""}
         </div>
       </div>
@@ -5776,10 +5810,10 @@ ${defending ? "" : `    <section class="notes">
   <p class="lede">STRATA turns a vulnerable app into a cross-section you fly through: seven planes stacked in depth, all rendering the same request at once. Seventeen labs ship in this file — Foundations, the OWASP Top 10, the injection set, and the access-control set — and the catalog takes any number more: a lab file is a plain <code>.js</code> away (see the authoring guide). The same instrument teaches every bug class without changing its rules.</p>
 
   <h3>These are real labs, not click-throughs</h3>
-  <p>Every lab carries <b>objectives</b> in the side rail — phases of the actual attack, from “break the literal” to “exfiltrate the table.” You complete them by making the engine say so, which means <em>typing the payload yourself</em> (or editing the raw request — more on that below). Hints reveal progressively, rung by rung, and the final rung shows the payload — but a solve earned that way is labeled. The preset that completes the final objective stays locked until you've solved the lab. Progress persists in your browser.</p>
+  <p>Every attack lab carries <b>objectives</b> in the side rail — phases of the actual attack, from “break the literal” to “exfiltrate the table.” You complete them by making the engine say so, which means <em>typing the payload yourself</em> (or editing the raw request — more on that below). Hints reveal progressively, rung by rung, and the final rung shows the payload — but a solve earned that way is labeled. The preset that completes the final objective stays locked until you've solved the lab. Progress persists in your browser.</p>
 
   <h3>Now in two directions</h3>
-  <p>The <b>Attacker</b> tab is the classic STRATA: type the payload, watch it cross. The <b>Defender</b> tab flips every lab that carries defense data: deploy a candidate patch — parameterize the query, escape the output, check the owner, verify the signature — and it is <em>actually applied</em>: honest traffic keeps flowing, attacks die at their layer (the surface stays live so you can keep probing), and if a payload still burns through, the verdict says <b>bypassed</b>. The engine also runs the full attack battery against your choice — a patch only counts when every vector dies, and the tempting non-fixes (hide the errors, add LIMIT 1, put quotes around it) fail on screen, with the reason.</p>
+  <p>The <b>Attacker</b> tab is the classic STRATA: type the payload, watch it cross. The <b>Defender</b> tab flips every lab that carries defense data: deploy a candidate patch — parameterize the query, escape the output, check the owner, verify the signature — and it is <em>actually applied</em>: honest traffic keeps flowing through every real fix, attacks die at their layer (the surface stays live so you can keep probing), and if a payload still burns through, the verdict says <b>bypassed</b>. The engine also runs the full attack battery against your choice — a patch only counts when every vector dies, and the tempting non-fixes (hide the errors, add LIMIT 1, put quotes around it) fail on screen, with the reason.</p>
 
   <h3>The one rule that makes it teach</h3>
   <p>Every byte that originated from the student is drawn in <b style="color:var(--taint)">amber</b>, at every layer, without exception. Nothing else in the interface is warm. You track your own payload from keystroke to query string to parser to DOM without being told where to look — and the moment amber stops being <em>data</em> and becomes <em>syntax</em> (SQL) or <em>markup</em> (HTML) is visible, not narrated.</p>
@@ -5936,7 +5970,6 @@ self.onmessage = (e) => {
       try { (0, eval)(m.code + "\\n//# sourceURL=" + (m.name || "sandboxed-lab.js")); }
       catch (err){ post({ type:"fatal", error:"lab file threw while evaluating: " + (err && err.message) }); return; }
       if (!LAB){ post({ type:"fatal", error: REG_ERR ? "validation failed: " + REG_ERR.join(" · ") : "the file ran but never called STRATA.registerLab(lab)" }); return; }
-      if (!LAB){ post({ type:"fatal", error: regErr ? "validation failed: " + regErr.join(" · ") : "the file ran but never called STRATA.registerLab(lab)" }); return; }
       if (LAB.domMode){ post({ type:"fatal", error:"domMode labs need a live DOM — a sandboxed lab can't use it (see AUTHORING.md)" }); return; }
       const D = LAB.defense;
       const snapshot = {
@@ -6012,6 +6045,12 @@ function wireSandboxWorker(worker){
         LABS.splice(prev, 1);
       }
       const cache = new Map(m.cached.map(([q, r]) => [q, sanitizeSandboxResult(r)]));
+      // HTML fields cross the trust boundary too — a catalog lab's goal/notes/blurb
+      // reach innerHTML on the goal strip, the explanation popup and the home cards
+      snap.goal = sanitizeLabHtml(snap.goal || "");
+      snap.notes = sanitizeLabHtml(snap.notes || "");
+      snap.blurb = sanitizeLabHtml(snap.blurb || "");
+      if (snap.defense) snap.defense = { ...snap.defense, blurb: sanitizeLabHtml(snap.defense.blurb || "") };
       const proxy = makeSandboxLab(snap, worker, cache);
       LABS.push(proxy);
       buildPicker(); buildHome();
@@ -6025,10 +6064,10 @@ function wireSandboxWorker(worker){
       lab._pending.delete(m.q);
       if (LAB === lab && state.q === m.q) repaintFromSandbox();
     } else if (m.type === "apply"){
-      APPLY_CACHE.set(m.optId + "\u0000" + m.q, m.r);
+      if (lab._applyCache) lab._applyCache.set(m.optId + "\u0000" + m.q, m.r);
       if (state.mode === "defend" && LAB === lab){
         recomputePatched(state.q);
-        renderPlane(0); layout(); paintHud();
+        renderPlane(0); bindSurface(); layout(); paintHud();
         refreshDefense(state.analysis);
       }
     } else if (m.type === "fire"){
@@ -6040,7 +6079,8 @@ function wireSandboxWorker(worker){
   worker.onerror = () => showLabErrors("Sandbox crashed", ["The worker threw before it could register a lab. The browser console has the detail."]);
 }
 function makeSandboxLab(snap, worker, cache){
-  const lab = { ...snap, _worker: worker, _cache: cache, _pending: new Set(),
+  const applyCache = new Map();   // per-lab, per-version: replacing the lab drops its verdicts
+  const lab = { ...snap, _worker: worker, _cache: cache, _pending: new Set(), _applyCache: applyCache,
     _ensure(q){ if (!cache.has(q) && !this._pending.has(q)){ this._pending.add(q); SANDBOX_GEN++; worker.postMessage({ cmd:"eval", q, gen:SANDBOX_GEN }); } },
     _mark(q, r){ if (r.a && typeof r.a === "object" && !r.a.__q){ try { Object.defineProperty(r.a, "__q", { value:String(q) }); } catch(_){} } return r.a; },
     analyze(q){ q = String(q); this._ensure(q); const r = cache.get(q); return r ? this._mark(q, r) : { __q:q, __pending:true }; },
@@ -6063,7 +6103,7 @@ function makeSandboxLab(snap, worker, cache){
     lab.defense = { blurb: snap.defense.blurb, vectors: snap.defense.vectors,
       options: snap.defense.options.map(o => ({ ...o,
         apply(q){ const key = o.id + "\u0000" + q;
-          if (APPLY_CACHE.has(key)) return APPLY_CACHE.get(key);
+          if (applyCache.has(key)) return applyCache.get(key);
           worker.postMessage({ cmd:"apply", optId:o.id, q });
           return { blocked:false, at:null, why:"the sandbox is testing this patch…" }; } })) };
   return lab;
@@ -6158,7 +6198,8 @@ function goHome(){
   state.mode = "attack";          // the catalog never inherits a lab's mode
   state.deployedPatch = null;
   state.patched = null;
-  el("labview").classList.remove("defend", "defended");
+  el("labview").classList.remove("defended");
+  ixWrap.hidden = true;
   window.scrollTo(0, 0);
 }
 el("homeBtn").addEventListener("click", goHome);
