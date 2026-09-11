@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/img/logo.svg" width="84" height="84" alt="STRATA logo — a cross-section of stacked layers with one amber weak spot">
+
 # STRATA
 
 ### Web security, in cross-section.
@@ -148,11 +150,7 @@ flowchart TD
     classDef bound fill:#e5484d,stroke:#a5121a,color:#ffffff,font-weight:bold;
 ```
 
-<div align="center"><br><img src="docs/img/02-crosssection.png" alt="A UNION-based SQL injection shown across all seven layers at once, with the taint trace on the right narrating the payload from the surface to the database and exfiltrating three credential rows." width="880"><br><sub>*A UNION injection, mid-exploit — the taint trace (right) narrates every layer, ending in 9 rows out and 3 leaked credentials.*</sub><br></div>
-
 **Every lab has a different taint signature — and the signature *is* the lesson.** DOM XSS tunnels through the client and skips the network entirely (the request/edge/server planes go dark — the fragment never leaves the browser). The WAF lab stops amber at the edge until you slip past its grammar. CSRF's amber never crosses the boundary at all — you attack the *victim's browser*, and the cookie rides along by itself.
-
-<div align="center"><br><img src="docs/img/05-ssrf.png" alt="The SSRF lab in cross-section: a decimal-encoded IP reaches the internal metadata service across the network boundary and leaks cloud credentials." width="880"><br><sub>*A different bug, a different signature: SSRF crosses a **network** boundary and leaks cloud keys — the decimal IP `2852039166` is `169.254.169.254` in disguise.*</sub><br></div>
 
 ---
 
@@ -310,4 +308,22 @@ New labs are the most valuable contribution — build one with [`docs/AI-LAB-BRI
 
 [MIT](LICENSE) — © 2026 STRATA contributors.
 
-<div align="center"><br><sub>Built to be read, not just run. Open <code>strata.html</code> and watch your payload cross the stack.</sub></div>
+---
+
+<div align="center">
+
+<img src="docs/img/logo.svg" width="60" height="60" alt="STRATA">
+
+### If STRATA taught you something, leave a ⭐
+
+A star helps other learners and teachers find it — and tells me the cross-section idea is worth pushing further. Got an idea, a bug, or a lab to contribute? Issues and PRs are always welcome.
+
+[![Star STRATA on GitHub](https://img.shields.io/github/stars/m0m0x01d/strata?style=social)](https://github.com/m0m0x01d/strata)
+&nbsp;
+[![Follow @m0m0x01d on X](https://img.shields.io/badge/Follow-%40m0m0x01d-000000?logo=x&logoColor=white&style=flat-square)](https://x.com/m0m0x01d)
+
+**[⭐ Star the repo](https://github.com/m0m0x01d/strata)** &nbsp;·&nbsp; **[Try the live demo](https://m0m0x01d.github.io/strata/strata.html)** &nbsp;·&nbsp; **[Say hi on X — @m0m0x01d](https://x.com/m0m0x01d)**
+
+<sub>Built by <a href="https://x.com/m0m0x01d">@m0m0x01d</a> — made to be read, not just run. Open <code>strata.html</code> and watch your payload cross the stack.</sub>
+
+</div>

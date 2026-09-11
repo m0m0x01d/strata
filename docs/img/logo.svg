@@ -1,0 +1,21 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="STRATA">
+  <rect width="64" height="64" rx="14" fill="#0E141B"/>
+  <rect x="0.5" y="0.5" width="63" height="63" rx="13.5" fill="none" stroke="#1E2E3B"/>
+  <!-- seven layers of one request, seen edge-on; the weak spot is amber -->
+  <g stroke-linejoin="round">
+    <!-- L0..L6 as receding parallelograms, offset 6px each -->
+    <g opacity="0.9">
+      <path d="M14 15 L46 10 L52 17 L20 22 Z" fill="#8FA9BC" fill-opacity="0.10" stroke="#8FA9BC" stroke-width="1.4"/>
+      <path d="M14 21 L46 16 L52 23 L20 28 Z" fill="#8FA9BC" fill-opacity="0.10" stroke="#8FA9BC" stroke-width="1.4"/>
+      <path d="M14 27 L46 22 L52 29 L20 34 Z" fill="#8FA9BC" fill-opacity="0.10" stroke="#8FA9BC" stroke-width="1.4"/>
+    </g>
+    <!-- the weak spot -->
+    <path d="M14 33 L46 28 L52 35 L20 40 Z" fill="#FFA24A" fill-opacity="0.22" stroke="#FFA24A" stroke-width="2"/>
+    <g opacity="0.9">
+      <path d="M14 39 L46 34 L52 41 L20 46 Z" fill="#8FA9BC" fill-opacity="0.10" stroke="#8FA9BC" stroke-width="1.4"/>
+      <path d="M14 45 L46 40 L52 47 L20 52 Z" fill="#8FA9BC" fill-opacity="0.10" stroke="#8FA9BC" stroke-width="1.4"/>
+    </g>
+  </g>
+  <!-- the taint: your input entering at the top -->
+  <circle cx="30" cy="12.5" r="2.4" fill="#FFA24A"/>
+</svg>
