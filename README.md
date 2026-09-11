@@ -20,13 +20,19 @@ STRATA renders a vulnerable web app as a **cross-section** — seven layers stac
 
 <br>
 
+### [▶ &nbsp;Open the live demo](https://m0m0x01d.github.io/strata/strata.html)
+
+<sub>runs entirely in your browser · nothing is sent anywhere</sub>
+
+<br>
+
 **[Quick start](#quick-start)** · **[What's different](#what-makes-strata-different)** · **[Who it's for](#who-its-for)** · **[Play](#two-ways-to-play)** · **[The labs](#the-lab-catalog)** · **[Make your own](#build-your-own-lab)** · **[Tooling](#command-line-tooling)**
 
 <br>
 
-<img src="docs/img/02-crosssection.png" alt="STRATA cross-section view: a UNION-based SQL injection shown across all seven layers at once, with the taint trace on the right showing the payload travelling from the surface to the database and exfiltrating three credential rows." width="880">
+<img src="docs/img/demo.gif" alt="A STRATA lab: opening the SQL injection lab, typing a UNION payload, and watching it travel across all seven layers into a cross-section view that exfiltrates the users table." width="820">
 
-<sub>*A UNION injection, mid-exploit: seven planes, one request, the payload traced from keystroke to leaked credentials.*</sub>
+<sub>*Type a payload, watch it cross the stack — from keystroke to leaked credentials.*</sub>
 
 </div>
 
@@ -35,15 +41,23 @@ STRATA renders a vulnerable web app as a **cross-section** — seven layers stac
 ## Quick start
 
 > [!TIP]
-> There is nothing to install. **Open `strata.html` in any modern browser** and you're in.
+> There is nothing to install. Try the **[live demo](https://m0m0x01d.github.io/strata/strata.html)**, or **open `strata.html` in any modern browser** and you're in.
 
 ```sh
-# Option A — just open it
-open strata.html            # macOS   (or double-click the file anywhere)
+# Clone it locally
+git clone https://github.com/m0m0x01d/strata.git
+cd strata
+
+# Option A — just open the file (no server needed)
+open strata.html                # macOS   ·   xdg-open strata.html on Linux   ·   start strata.html on Windows
+#   …or simply double-click strata.html in your file manager.
 
 # Option B — serve the folder (enables the community shelf + the in-app Authoring link)
 python3 -m http.server 8641     # then visit http://127.0.0.1:8641/strata.html
 ```
+
+> [!NOTE]
+> Prefer not to clone? On the repo page, open [`strata.html`](strata.html), click **Raw**, and save the page (`Ctrl/⌘+S`) — that single file *is* the whole app.
 
 No build step, no `npm install`, no accounts, no backend. Progress persists in your browser's `localStorage` (`strata.progress.v1`) and never leaves your machine.
 
@@ -133,6 +147,8 @@ flowchart TD
     classDef hot fill:#ffe8a3,stroke:#b8860b,color:#1a1a1a;
     classDef bound fill:#e5484d,stroke:#a5121a,color:#ffffff,font-weight:bold;
 ```
+
+<div align="center"><br><img src="docs/img/02-crosssection.png" alt="A UNION-based SQL injection shown across all seven layers at once, with the taint trace on the right narrating the payload from the surface to the database and exfiltrating three credential rows." width="880"><br><sub>*A UNION injection, mid-exploit — the taint trace (right) narrates every layer, ending in 9 rows out and 3 leaked credentials.*</sub><br></div>
 
 **Every lab has a different taint signature — and the signature *is* the lesson.** DOM XSS tunnels through the client and skips the network entirely (the request/edge/server planes go dark — the fragment never leaves the browser). The WAF lab stops amber at the edge until you slip past its grammar. CSRF's amber never crosses the boundary at all — you attack the *victim's browser*, and the cookie rides along by itself.
 
