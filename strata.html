@@ -1015,6 +1015,7 @@ select.labsel option{background:var(--strata); color:var(--ink)}
 .logv .logrow.dim{color:#9aa3ad; font-style:italic}
 
 /* ── OBJECTIVES (the challenge ladder in the side rail) ────── */
+.objs[hidden]{display:none}   /* .objs sets a display, which would defeat the hidden attribute */
 .objs{padding:0 16px 12px; border-bottom:1px solid var(--rule); margin-bottom:10px;
   display:flex; flex-direction:column; gap:7px}
 .objs h2{margin:0 0 2px; padding:0}
@@ -4877,7 +4878,7 @@ function buildPicker(){
     `<optgroup label="${esc(cat)}">${ls.map(l => `<option value="${l.id}">${esc(l.code)} · ${esc(l.title)}</option>`).join("")}</optgroup>`
   ).join("");
 }
-el("labsel").addEventListener("change", e => buildLab(e.target.value, "attack"));   // the picker is the attacker side
+el("labsel").addEventListener("change", e => buildLab(e.target.value, state.mode));   // the picker keeps your side; goHome resets to attack
 buildPicker();
 
 function buildLab(id, mode){
