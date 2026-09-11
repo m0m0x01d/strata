@@ -3780,10 +3780,539 @@ function mdToHtml(md){
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
 }
 
+/* ── A03 · OS COMMAND INJECTION ───────────────────────────────────────
+   The shell engine is honest: a small scanner walks the string tracking
+   quote state, so metacharacters inside quotes are data and metacharacters
+   outside them are script — exactly the distinction /bin/sh makes. */
+function shellScan(s){
+  let q = null;
+  for (let i = 0; i < s.length; i++){
+    const c = s[i];
+    if (q){ if (c === "\\" && q === '"') i++; else if (c === q) q = null; continue; }
+    if (c === "'" || c === '"'){ q = c; continue; }
+    if (c === "\\"){ i++; continue; }
+    if (c === ";" || c === "\n") return { at:i, kind:";", rest:s.slice(i + 1) };
+    if (c === "|") return s[i + 1] === "|" ? { at:i, kind:"||", rest:s.slice(i + 2) } : { at:i, kind:"|", rest:s.slice(i + 1) };
+    if (c === "&") return s[i + 1] === "&" ? { at:i, kind:"&&", rest:s.slice(i + 2) } : { at:i, kind:"&", rest:s.slice(i + 1) };
+    if (c === "`"){
+      const end = s.indexOf("`", i + 1);
+      if (end > i) return { at:i, kind:"`", rest:s.slice(i + 1, end) };
+    }
+    if (c === "$" && s[i + 1] === "("){
+      let d = 0;
+      for (let j = i + 1; j < s.length; j++){
+        if (s[j] === "(") d++;
+        else if (s[j] === ")" && --d === 0) return { at:i, kind:"$()", rest:s.slice(i + 2, j) };
+      }
+    }
+  }
+  return null;
+}
+const CMD_OUT = {
+  id: "uid=33(www-data) gid=33(www-data) groups=33(www-data)",
+  whoami: "www-data",
+  uname: "Linux ops-1 5.15.0-91-generic #101-Ubuntu SMP x86_64 GNU/Linux"
+};
+const CMD_FILES = {
+  "/etc/passwd": "root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\nwww-data:x:33:33:www-data:/var/www:/usr/sbin/nologin\nops:x:1000:1000:Ops:/home/ops:/bin/bash",
+  "config.ini": "[db]\nuser=portal\npassword=Postgres-9f2c-hunter\nhost=db.internal\n"
+};
+const LAB_CMDI = {
+  id:"cmdi", code:"A03", cat:"Injection", title:"OS command injection in a ping utility",
+  difficulty:"Apprentice",
+  goal:"The ops page runs <code>ping</code> for you. Make the server run a <em>second</em> command — then read <code>/etc/passwd</code>.",
+  notes:`The server builds a <b>shell string</b> with your input inside it, so your bytes stop being an argument and become the script itself: <code>;</code>, <code>|</code>, <code>&amp;&amp;</code>, backticks and <code>$()</code> are only "text" until the shell reads them. <b>The fix:</b> never build shell strings. <code>subprocess.run(["ping","-c1",host])</code> passes an argv array — your bytes become one inert argument no matter what they contain — and a hostname allowlist (<code>^[\w.-]+$</code>) closes the door entirely.`,
+  layers:[ {code:"L0",title:"Surface",meta:"ops console"},{code:"L1",title:"Client",meta:"browser"},
+           {code:"L2",title:"Request",meta:"GET /ops/ping"},{code:"L3",title:"Edge",meta:"proxy"},
+           {code:"L4",title:"Server",meta:"app.py"},{code:"L5",title:"Shell",meta:"/bin/sh"},
+           {code:"L6",title:"OS",meta:"processes"} ],
+  boundary:4, boundaryLabel:"OS boundary", boundaryTone:"breach",
+  consoleLabel:"Host to ping", defaultQ:"127.0.0.1",
+  presets:[ {q:"127.0.0.1",label:"A normal ping"},
+            {q:"127.0.0.1; id",label:"Semicolon — then a second command"},
+            {q:"127.0.0.1 | uname -a",label:"Pipe the ping away"},
+            {q:"127.0.0.1; cat /etc/passwd",label:"Read the password file", spoiler:true} ],
+  wire:{ type:"query", path:"/ops/ping", param:"host" },
+  challenge:{ steps:[
+    { id:"escape", label:"Run any command after the ping", test:a => !!(a.hit && a.cmd),
+      hints:["The shell sees operators ; | && ` $( ) — the ping argument ends at the first one.",
+             "Append ; id — semicolon, then a space, then a command."],
+      reveal:"127.0.0.1; id" },
+    { id:"passwd", label:"Read /etc/passwd off the server", test:a => !!(a.stdout && a.file === "/etc/passwd"),
+      hints:["The lab accepts any readable file: cat prints it next to the ping output.",
+             "127.0.0.1; cat /etc/passwd"],
+      reveal:"127.0.0.1; cat /etc/passwd" }
+  ]},
+  analyze(q){
+    const s = String(q);
+    const hit = shellScan(s);
+    const words = hit ? hit.rest.trim().split(/\s+/) : [];
+    const cmd = words[0] || "";
+    const arg = words.slice(1).join(" ");
+    let stdout = null, file = null;
+    if (hit && CMD_OUT[cmd] != null) stdout = CMD_OUT[cmd];
+    else if (hit && cmd === "cat" && CMD_FILES[arg] != null){ stdout = CMD_FILES[arg]; file = arg; }
+    else if (hit && cmd === "cat" && arg === "config.ini"){ stdout = CMD_FILES["config.ini"]; file = "/app/config.ini"; }
+    return { q:s, hit, cmd, arg, stdout, file,
+      fires: !!hit, solved: !!(hit && (stdout || cmd)) && (hit ? !!cmd : false), gotOutput: !!stdout };
+  },
+  solved: a => a.gotOutput,
+  layerState(i, a){
+    return [ "present","present","present","present",
+             a.hit ? "boundary" : "present",
+             a.hit ? "promoted" : "present",
+             a.gotOutput ? "sink" : "present" ][i];
+  },
+  render:{
+    0: a => {
+      let out;
+      if (!a.hit) out = `<pre class="s-ok">PING 127.0.0.1 56(84) bytes of data.
+64 bytes from 127.0.0.1: icmp_seq=1 ttl=64 time=0.041 ms
+
+--- 127.0.0.1 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss</pre>`;
+      else {
+        const injected = a.stdout
+          ? `<pre class="s-leak">${esc(a.stdout)}</pre>`
+          : `<pre class="s-empty">sh: ${esc(a.cmd || a.hit.rest.trim())}: command not found</pre>`;
+        out = `<pre class="s-ok">PING 127.0.0.1 … 1 received, 0% loss</pre>${injected}`;
+      }
+      const body = `<h1 class="s-h">Ops · network check</h1>
+        <p class="s-sub">internal tool · signed in as ops</p>
+        ${field("Host to ping", a.q, "Ping", "127.0.0.1")}
+        <div style="margin-top:14px">${out}</div>`;
+      return `<div class="applayer">${siteFrame({ path:"/ops/ping", search:false, body })}</div>`;
+    },
+    1: a => explain("What the browser did",
+        "Sent the text and drew whatever came back. The browser has no idea that <em>this</em> input, unlike a search box, is headed for a shell — and it couldn't stop it anyway.")
+      + `<pre class="src">${codeLines([
+          {t:`fetch(<span class="str">'/ops/ping?host=' + host</span>)`, hot:true},
+          {t:`  .then(r =&gt; r.text()).then(draw);`}
+        ])}</pre>`,
+    2: a => `<pre class="src">${codeLines([
+        {t:`<span class="kw">GET</span> /ops/ping?host=${taint(esc(a.q))} <span class="kw">HTTP/1.1</span>`, hot:true},
+        {t:`<span class="kw">Host:</span> ops.aperture.lab`},
+        {t:`<span class="kw">Cookie:</span> session=<span class="str">…your valid login…</span>`}
+      ])}</pre>${note("","Layer 2 · just text on the wire","To the network this is an ordinary query string. The <code>;</code> is six bytes of inert data — until layer 5 reads them.")}`,
+    3: a => note("","Layer 3 · nothing to inspect","The proxy validates HTTP, not shell. It has no grammar for <code>;</code> — that belongs to a parser two layers down."),
+    4: a => `<pre class="src">${codeLines([
+        {t:`<span class="kw">@app.route</span>(<span class="str">"/ops/ping"</span>)`},
+        {t:`<span class="kw">def</span> ping():`},
+        {t:`    host = request.args.get(<span class="str">"host"</span>)`},
+        {t:`    out = os.system(<span class="str">f"ping -c1 {host}"</span>)`, hot:true},
+        {t:`    <span class="kw">return</span> render(<span class="str">"out.html"</span>, out)`}
+      ])}</pre>${note("warn","Layer 4 · a string becomes a script","<code>os.system</code> hands the whole line to <code>/bin/sh</code>. The f-string glued your bytes into shell <em>source code</em> — everything after the first operator is a new command.")}`,
+    5: a => a.hit
+      ? explain("Data became source code",
+          `The shell re-parses the line your bytes already live in. At the <b style="color:var(--taint)">${a.hit.kind}</b> it ends the <code>ping</code> command and starts reading <em>yours</em>.`)
+        + kv([["ping argument", esc(a.q.slice(0, a.hit.at)), ""],
+              ["operator", a.hit.kind, "bad"],
+              ["your command", taint(a.hit.rest.trim()), ""],
+              ["runs as", "www-data", "bad"]])
+      : explain("All data, no script",
+          "Without an unquoted operator, everything you typed stays inside ping's single argument. The shell never gets a reason to see it as anything else.")
+        + `<pre class="src">${codeLines([
+            {t:`sh -c <span class="str">"ping -c1 ${taint(esc(a.q))}"</span>`}
+          ])}</pre>`,
+    6: a => {
+      const rows = [["1","ping","www-data", !a.hit], [a.hit ? "2" : "—", a.cmd || "—", "www-data", !!a.hit && !!a.stdout]];
+      return `<table class="db"><caption>process table — after your request</caption>
+        <tr><th>pid</th><th>command</th><th>user</th><th>output</th></tr>
+        ${rows.map(([p,c,u,leak]) => `<tr class="${leak ? "got" : "locked"}"><td>${p}</td><td>${esc(c)}</td><td>${u}</td><td>${leak ? "<b>yes</b>" : "—"}</td></tr>`).join("")}</table>`
+        + (a.gotOutput
+          ? note("warn","Layer 6 · the process ran and its stdout came back","<code>id</code>, <code>cat</code>, <code>uname</code> — whatever you named, the OS executed as the web user. That user exists to serve pages, not to read <code>/etc/passwd</code>.")
+          : note("","Layer 6 · only the ping ran","Add an operator and a command name to spawn a second process."));
+    }
+  },
+  trace(a){ const S=i=>this.layerState(i,a);
+    return [ {h:"L0 · Surface",state:S(0),b:`You “ping” <em>${esc(a.q)}</em>.`},
+      {h:"L1 · Client",state:S(1),b:`Browser sends your text.`},
+      {h:"L2 · Request",state:S(2),b:`Ordinary query string.`},
+      {h:"L3 · Edge",state:S(3),b:`Forwarded — valid HTTP.`},
+      {h:"L4 · Server",state:S(4),b:a.hit?`Glued into a shell string.`:`Glued into a shell string.`},
+      {h:"L5 · Shell",state:S(5),b:a.hit?`<strong>${a.hit.kind} — a second command begins.</strong>`:`Your bytes stay one argument.`},
+      {h:"L6 · OS",state:S(6),b:a.gotOutput?`<strong>Executed as www-data — output returned.</strong>`:(a.hit?`Tried: ${esc(a.cmd || "?")} — not found.`:`Only ping ran.`)} ];
+  },
+  verdict(a){
+    return [ ["Input", esc(a.q), ""],
+      ["Operator", a.hit ? a.hit.kind : "—", a.hit ? "bad" : ""],
+      ["Command", a.cmd ? esc(a.cmd + (a.arg ? " " + a.arg : "")) : "—", a.cmd ? "bad" : ""],
+      ["Output", a.gotOutput ? "captured" : "none", a.gotOutput ? "bad" : ""],
+      ["Lab", a.gotOutput ? "Solved" : "Not solved", a.gotOutput ? "good" : ""] ];
+  },
+  defense:{
+    blurb:"Three ways to close a shell hole: pass an <b>argv array</b> (the bytes become one argument), allowlist hostnames, or sanitize the string. Watch which ones actually hold.",
+    vectors:[
+      {q:"127.0.0.1; id", label:"semicolon + id"},
+      {q:"127.0.0.1`uname -a`", label:"backtick substitution"},
+      {q:"127.0.0.1$(id)", label:"$() subshell"}
+    ],
+    options:[
+      { id:"argv", label:"Argv array, no shell", code:`out = subprocess.run(["ping","-c1", host], capture_output=True)`,
+        apply(q){ return { blocked:true, at:4, why:"No shell is invoked at all — your bytes arrive as ping's single argv entry, operators included." }; } },
+      { id:"allowlist", label:"Hostname allowlist", code:`if not re.fullmatch(r"[A-Za-z0-9.-]+", host): abort(400)`,
+        apply(q){ return /^[A-Za-z0-9.-]+$/.test(q)
+          ? { blocked:false, at:null, why:"This input is a legal hostname — but it contains no operator, so the ping is all that runs." }
+          : { blocked:true, at:4, why:"Rejected: operators and quotes are not valid hostname characters." }; } },
+      { id:"quote", label:"Wrap the input in quotes", code:`os.system(f'ping -c1 "{host}"')`,
+        apply(q){ return q.includes('"')
+          ? { blocked:false, at:5, why:"A \" in the input closes the server's own quote — everything after it is shell source again." }
+          : { blocked:true, at:5, why:"Inside double quotes your bytes are one argument… which holds for exactly these vectors. It is a shield that shatters on one character — don't ship it." }; } },
+      { id:"strip", label:"Strip dangerous operators", code:"host = re.sub(\"[;&|`\\n\", \"\", host)",
+        apply(q){ const cleaned = q.replace(/[;&|`\n]/g, "");
+          return cleaned === q
+            ? { blocked:false, at:5, why:"Nothing to strip — backticks and $() were never in the blocklist, and they still parse." }
+            : { blocked:true, at:4, why:"Stripped — but strip-lists are whack-a-mole: the list must beat every operator the shell knows." }; } }
+    ]
+  }
+};
+
+/* ── A01 · PATH TRAVERSAL (file viewer) ───────────────────────────────
+   Path resolution follows Python's os.path semantics honestly, including
+   the gotcha that os.path.join("docs", "/etc/passwd") DISCARDS the base. */
+const DOCS_FILES = {
+  "intro.txt": "Welcome to Aperture Docs.\n\nEverything in this folder is public drafts. Roadmap, style guide, changelog — help yourself.",
+  "roadmap.txt": "Q3: payments v2 · Q4: SSO\n(both slipped a quarter. as usual.)"
+};
+const FS_FILES = {
+  "etc/passwd": "root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\nwww-data:x:33:33:www-data:/var/www:/usr/sbin/nologin\nops:x:1000:1000:Ops:/home/ops:/bin/bash",
+  "app/config.ini": "[db]\nuser=portal\npassword=Postgres-9f2c-hunter\nhost=db.internal\n",
+  "app/notes.txt": "TODO: validate f before serving. — previous intern, 2019"
+};
+function resolveUnder(root, rel){
+  const joined = String(rel).startsWith("/") ? String(rel) : root + "/" + rel;
+  const parts = [];
+  for (const seg of joined.split("/")){
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") parts.pop();   // realpath clamps at / — extra .. above root are no-ops
+    else parts.push(seg);
+  }
+  return { path: parts.join("/"), absolute: String(rel).startsWith("/"), escaped: !parts.join("/").startsWith(root) };
+}
+const LAB_LFI = {
+  id:"lfi", code:"A01", cat:"Broken Access Control", title:"Path traversal in a docs viewer",
+  difficulty:"Apprentice",
+  goal:"The docs page serves files from one folder. Climb out of it — read <code>/etc/passwd</code>, then the application's own config.",
+  notes:`The server joins your filename onto a folder and opens the result — but paths are a language, and <code>..</code> is its operator. <code>../../etc/passwd</code> walks <em>up</em> before walking down; and because <code>os.path.join</code> discards the base when the second argument is absolute, <code>/etc/passwd</code> alone skips the folder entirely. <b>The fix:</b> resolve first, then check the prefix — <code>realpath(p).startswith(DOCS_ROOT)</code> — or serve from an allowlist that never touches the filesystem.`,
+  layers:[ {code:"L0",title:"Surface",meta:"docs viewer"},{code:"L1",title:"Client",meta:"browser"},
+           {code:"L2",title:"Request",meta:"GET /docs"},{code:"L3",title:"Edge",meta:"proxy"},
+           {code:"L4",title:"Server",meta:"app.py"},{code:"L5",title:"FS",meta:"path resolution"},
+           {code:"L6",title:"Disk",meta:"files"} ],
+  boundary:4, boundaryLabel:"Filesystem boundary", boundaryTone:"breach",
+  consoleLabel:"File to view", defaultQ:"intro.txt",
+  presets:[ {q:"intro.txt",label:"A normal doc"},
+            {q:"../server.log",label:"One level up — miss"},
+            {q:"../../etc/passwd",label:"The classic climb"},
+            {q:"../../../app/config.ini",label:"The app's own config", spoiler:true} ],
+  wire:{ type:"query", path:"/docs", param:"f" },
+  challenge:{ steps:[
+    { id:"passwd", label:"Read /etc/passwd from outside the docs folder",
+      test:a => a.path === "etc/passwd" && a.content != null,
+      hints:[".. means parent. Two of them undo docs/ entirely.",
+             "../../etc/passwd — or skip the climb: the join discards its base for absolute paths, so /etc/passwd also works."],
+      reveal:"../../etc/passwd" },
+    { id:"config", label:"Read the application's config — DB password included",
+      test:a => a.path === "app/config.ini" && a.content != null,
+      hints:["The app runs one level above the web root: ../../ then the app's own folder.",
+             "../../../app/config.ini"],
+      reveal:"../../../app/config.ini" }
+  ]},
+  analyze(q){
+    const s = String(q).trim();
+    const r = resolveUnder("docs", s);
+    let content = null, err = null, status = "doc";
+    if (r.path.startsWith("docs/")){
+      content = DOCS_FILES[r.path.slice(5)] ?? null;
+      if (!content) { err = "FileNotFoundError"; status = "miss"; }
+    } else if (r.path === "etc/shadow"){ err = "PermissionError"; status = "denied"; }
+    else if (FS_FILES[r.path] != null){ content = FS_FILES[r.path]; status = r.absolute ? "absolute" : "escape"; }
+    else { err = "FileNotFoundError"; status = "miss"; }
+    return { q:s, ...r, content, err, status,
+      outside: status === "escape" || status === "absolute",
+      secrets: r.path === "app/config.ini" && content != null,
+      solved: (status === "escape" || status === "absolute") && content != null };
+  },
+  solved: a => a.solved,
+  layerState(i, a){
+    return [ "present","present","present","present",
+             a.outside ? "boundary" : "present",
+             a.outside ? "promoted" : "present",
+             a.solved ? "sink" : "present" ][i];
+  },
+  render:{
+    0: a => {
+      let panel;
+      if (a.err) panel = `<div class="s-empty">${esc(a.err)}: '${esc(a.q)}' — ${a.status === "denied" ? "the web user may not read this file (it exists)." : "no such file."}</div>`;
+      else panel = `<pre class="${a.outside ? "s-leak" : "s-ok"}">${esc(a.content)}</pre>`;
+      const body = `<h1 class="s-h">Aperture Docs</h1>
+        <p class="s-sub">internal drafts · view a file</p>
+        ${field("File", a.q, "View", "intro.txt")}
+        <div style="margin-top:14px">${panel}</div>`;
+      return `<div class="applayer">${siteFrame({ path:"/docs?f=" + encodeURIComponent(a.q).replace(/%2F/gi, "/"), search:false, body })}</div>`;
+    },
+    1: a => explain("What the browser did",
+        "Requested the filename and rendered the text that came back. Filenames are just strings to a browser — <code>..</code> means nothing until a filesystem reads it.")
+      + `<pre class="src">${codeLines([
+          {t:`fetch(<span class="str">'/docs?f=' + encodeURIComponent(f)</span>)`, hot:true}
+        ])}</pre>`,
+    2: a => `<pre class="src">${codeLines([
+        {t:`<span class="kw">GET</span> /docs?f=${taint(esc(a.q))} <span class="kw">HTTP/1.1</span>`, hot:true},
+        {t:`<span class="kw">Host:</span> docs.aperture.lab`}
+      ])}</pre>${note("","Layer 2 · a filename is data","Two dots and a slash — inert bytes. URL-encoding them (<code>%2e%2e%2f</code>) changes nothing either: the server URL-decodes before it opens, which is exactly what the intercept tab demonstrates.")}`,
+    3: a => note("","Layer 3 · nothing to inspect","The path is well-formed and the user is allowed to read docs. Whether they may read <em>this</em> path is a question the proxy can't even pose."),
+    4: a => `<pre class="src">${codeLines([
+        {t:`<span class="kw">@app.route</span>(<span class="str">"/docs"</span>)`},
+        {t:`<span class="kw">def</span> docs():`},
+        {t:`    f = request.args.get(<span class="str">"f"</span>)`},
+        {t:`    <span class="kw">return</span> send_file(os.path.join(<span class="str">"docs"</span>, f))`, hot:true}
+      ])}</pre>${note("warn","Layer 4 · the join trusts the input","<code>os.path.join</code> is concatenation with manners, not a security check. And it has a famous betrayal: join('docs', '/etc/passwd') returns <b>/etc/passwd</b> — an absolute second argument discards the base.")}`,
+    5: a => explain("Resolution, step by step",
+        `The filesystem normalizes the joined path — <code>..</code> pops the segment before it. Watch your bytes operate on the path itself:`)
+      + `<pre class="src">${codeLines([
+          {t:`join: <span class="str">docs/</span>${taint(esc(a.q))}`},
+          {t:`resolve: <span class="str">${esc(a.path)}</span>`, hot:a.outside},
+          {t:`root check: <span class="str">${a.outside ? "none — the app never asks" : "not needed — still inside docs/"}</span>`, hot:a.outside}
+        ])}</pre>`
+      + (a.outside ? note("warn","Layer 5 · you left the web root","<code>" + esc(a.path) + "</code> — outside <code>docs/</code>, and nothing pushed back. <b>..</b> was promoted from a filename to a path operator.") : note("","Layer 5 · still inside the web root","Climb with .. — or skip the climb with an absolute path.")),
+    6: a => {
+      const row = (p, cls, note_) => `<tr class="${cls}"><td>/${esc(p)}</td><td>${note_}</td></tr>`;
+      return `<table class="db"><caption>what the web user can reach</caption>
+        <tr><th>path</th><th>status</th></tr>
+        ${row("docs/intro.txt", a.path === "docs/intro.txt" ? "got" : "locked", "public draft")}
+        ${row("etc/passwd", a.path === "etc/passwd" ? "got" : "locked", a.path === "etc/passwd" ? "<b>read — accounts &amp; shells</b>" : "readable by all")}
+        ${row("etc/shadow", a.path === "etc/shadow" ? "got" : "locked", "permission denied")}
+        ${row("app/config.ini", a.path === "app/config.ini" ? "got" : "locked", a.path === "app/config.ini" ? "<b>read — DB password</b>" : "one level above the web root")}
+      </table>`
+        + (a.secrets
+          ? note("warn","Layer 6 · the real prize","The password file proves the hole; the config file <em>exploits</em> it. This is why traversal is graded critical even when 'only files' are involved.")
+          : note("","Layer 6 · the disk answers honestly","It has no opinion about who should ask — that was layer 4's job."));
+    }
+  },
+  trace(a){ const S=i=>this.layerState(i,a);
+    return [ {h:"L0 · Surface",state:S(0),b:`You view <em>${esc(a.q)}</em>.`},
+      {h:"L1 · Client",state:S(1),b:`Browser sends the filename.`},
+      {h:"L2 · Request",state:S(2),b:`Ordinary query string.`},
+      {h:"L3 · Edge",state:S(3),b:`Forwarded — reads docs, looks fine.`},
+      {h:"L4 · Server",state:S(4),b:a.outside?`Join produced a path outside docs/.`:`Join produced a docs/ path.`},
+      {h:"L5 · FS",state:S(5),b:a.outside?`<strong>.. operated — you left the web root.</strong>`:`Resolution stayed inside.`},
+      {h:"L6 · Disk",state:S(6),b:a.solved?`<strong>${esc(a.path)} served.</strong>`:(a.err?esc(a.err):`Draft file served.`)} ];
+  },
+  verdict(a){
+    return [ ["Input", esc(a.q), ""],
+      ["Resolved", esc(a.path), a.outside ? "bad" : ""],
+      ["Outside web root?", a.outside ? "yes" : "no", a.outside ? "bad" : ""],
+      ["DB password read?", a.secrets ? "yes" : "no", a.secrets ? "bad" : ""],
+      ["Lab", a.solved ? "Solved" : "Not solved", a.solved ? "good" : ""] ];
+  },
+  defense:{
+    blurb:"Rejecting <code>..</code>, stripping it, or checking the resolved path — the difference between a filter and a boundary.",
+    vectors:[
+      {q:"../../etc/passwd", label:"classic climb"},
+      {q:"/etc/passwd", label:"absolute path (join discards base)"},
+      {q:"../../../app/config.ini", label:"app config"}
+    ],
+    options:[
+      { id:"realpath", label:"Resolve, then check prefix", code:`p = os.path.realpath(os.path.join(DOCS, f))\nif not p.startswith(DOCS_REAL): abort(403)`,
+        apply(q){ const r = resolveUnder("docs", q);
+          return r.escaped || r.absolute
+            ? { blocked:true, at:5, why:"Resolution still happens — but the check compares the RESULT against the real docs root, so every spelling that ends outside dies here." }
+            : { blocked:false, at:null, why:"Inside the root — served, correctly." }; } },
+      { id:"reject-dots", label:"Reject inputs containing ..", code:`if ".." in f: abort(400)`,
+        apply(q){ return q.includes("..")
+          ? { blocked:true, at:4, why:"Rejected before any filesystem call — all the ..-based climbs die, including the ....// spelling (it contains ..)." }
+          : { blocked:false, at:null, why:"No .. in it — but an ABSOLUTE path never needed dots in the first place." }; } },
+      { id:"strip-dots", label:"Strip ../ occurrences", code:`f = f.replace("../", "")`,
+        apply(q){ const cleaned = q.split("../").join("");
+          if (cleaned !== q){
+            // ....// survives a single-pass replace: removing "../" leaves "../"
+            const r2 = resolveUnder("docs", cleaned);
+            return r2.escaped
+              ? { blocked:false, at:5, why:"One replace pass is not enough: ....// contains ../ twice-overlapping — strip it and ../ is what remains." }
+              : { blocked:true, at:4, why:"Stripped, and what survived resolves inside the root." };
+          }
+          const r = resolveUnder("docs", q);
+          return r.escaped
+            ? { blocked:false, at:5, why:"Nothing to strip — the absolute path never used ../ and the join handed the FS a full path." }
+            : { blocked:false, at:null, why:"Nothing dangerous in it — served." }; } },
+      { id:"allowmap", label:"Serve from an object map", code:`FILES = {"intro.txt": …, "roadmap.txt": …}\nreturn FILES.get(f) or abort(404)`,
+        apply(q){ return DOCS_FILES[q.trim()] != null || q.trim() === "intro.txt"
+          ? { blocked:false, at:null, why:"A known doc — served from memory. No path, no filesystem, no language to abuse." }
+          : { blocked:true, at:4, why:"Not a key in the map — 404. The web root is the only thing that exists; there is nothing to traverse into." }; } }
+    ]
+  }
+};
+
+/* ── A01 · CSRF — the browser as deputy ─────────────────────────────── */
+function csrfScan(html){
+  const s = String(html);
+  const scan = { form:false, post:false, bank:false, auto:false, amount:0,
+                 action:"", cookieAttached:false };
+  const fm = /<form\b[^>]*>/i.exec(s);
+  if (fm){
+    scan.form = true;
+    scan.action = ((/action\s*=\s*"([^"]*)"/i.exec(fm[0]) || /action\s*=\s*'([^']*)'/i.exec(fm[0]) || [])[1]) || "";
+    scan.post = /method\s*=\s*["']?post\b/i.test(fm[0]);
+    scan.bank = /aperture\.lab\/api\/transfer/i.test(scan.action);
+    const end = s.slice(fm.index).search(/<\/form>/i);
+    const inner = end >= 0 ? s.slice(fm.index, fm.index + end) : s.slice(fm.index);
+    const amtTag = /<input\b[^>]*name\s*=\s*["']?amount\b[^>]*>/i.exec(inner)
+      || /<input\b[^>]*(?:value\s*=\s*["']?\d+[^>]*)name\s*=\s*["']?amount\b[^>]*>/i.exec(inner);
+    if (amtTag) scan.amount = parseInt((/value\s*=\s*["']?(\d+)/i.exec(amtTag[0]) || [])[1] || "0", 10) || 0;
+  }
+  scan.auto = /\.submit\s*\(\s*\)/.test(s)
+    || (/\.click\s*\(\s*\)/.test(s) && !!fm)
+    || /on(?:load|error)\s*=\s*["'][^"']*submit/i.test(s);
+  scan.cookieAttached = scan.post && scan.bank;   // the browser attaches the victim's cookie to cross-site POSTs
+  scan.fires = scan.form && scan.post && scan.bank && scan.auto && scan.amount > 0;
+  return scan;
+}
+const LAB_CSRF = {
+  id:"csrf", code:"A01", cat:"Broken Access Control", title:"CSRF — the browser as deputy",
+  difficulty:"Practitioner",
+  goal:"You control a page the <em>victim</em> visits. Write the HTML that makes <b>their logged-in browser</b> send a $5,000 transfer — no password, no XSS, no stolen cookies.",
+  notes:`CSRF in one sentence: the browser proves <em>who</em> is sending a request (the cookie), and the server assumes that means the <em>person</em> meant to. Your page can't read the victim's cookie — the same-origin policy forbids it — but it doesn't need to: it just makes the victim's browser send a POST, and the browser attaches the cookie itself. <b>The fix:</b> something the attacker page cannot supply — a per-session CSRF token in the form, an <code>Origin</code> header check, or <code>SameSite=Strict</code> on the cookie so it never rides along cross-site.`,
+  layers:[ {code:"L0",title:"Surface",meta:"attacker page → victim tab"},{code:"L1",title:"Client",meta:"the deputy"},
+           {code:"L2",title:"Request",meta:"POST /api/transfer"},{code:"L3",title:"Edge",meta:"origin boundary"},
+           {code:"L4",title:"Server",meta:"app.py"},{code:"L5",title:"Session",meta:"who sent this?"},
+           {code:"L6",title:"Data",meta:"ledger"} ],
+  boundary:3, boundaryLabel:"Origin boundary", boundaryTone:"breach",
+  consoleLabel:"Your attack page (HTML)", defaultQ:"<h1>Free pizza coupon 🍕</h1>",
+  presets:[ {q:"<h1>Free pizza coupon 🍕</h1>",label:"A harmless page"},
+            {q:'<form action="https://bank.aperture.lab/api/transfer" method="POST"><input name="amount" value="1"><input type="submit" value="Claim"></form>',label:"The form — but it needs a click"},
+            {q:'<form action="https://bank.aperture.lab/api/transfer" method="POST"><input name="amount" value="5000"></form><script>document.forms[0].submit()</script>',label:"The full attack", spoiler:true} ],
+  challenge:{ steps:[
+    { id:"form", label:"Point a form at the bank's transfer endpoint",
+      test:a => a.form && a.bank && a.post,
+      hints:["action=\"https://bank.aperture.lab/api/transfer\", method POST.",
+             "<form action=\"https://bank.aperture.lab/api/transfer\" method=\"POST\">…</form>"],
+      reveal:'<form action="https://bank.aperture.lab/api/transfer" method="POST"><input name="amount" value="1"></form>' },
+    { id:"auto", label:"Make it submit itself — no click",
+      test:a => a.auto,
+      hints:["The victim will not click anything. Script it.",
+             "Append <script>document.forms[0].submit()</script>"],
+      reveal:'<form action="https://bank.aperture.lab/api/transfer" method="POST"><input name="amount" value="1"></form><script>document.forms[0].submit()</script>' },
+    { id:"steal", label:"Move $5,000 out of the victim's account",
+      test:a => a.fires && a.amount >= 5000,
+      hints:["Everything is in place — set the amount input to 5000.",
+             '<input name="amount" value="5000">'],
+      reveal:'<form action="https://bank.aperture.lab/api/transfer" method="POST"><input name="amount" value="5000"></form><script>document.forms[0].submit()</script>' }
+  ]},
+  analyze(q){ return { q:String(q), ...csrfScan(q) }; },
+  solved: a => !!a.fires,
+  layerState(i, a){
+    const armed = a.form && a.post && a.bank;
+    return [ "present", armed ? "promoted" : "present", a.fires ? "sink" : "present",
+             a.fires ? "boundary" : "present", a.fires ? "boundary" : "present",
+             a.fires ? "promoted" : "present", a.fires ? "sink" : "present" ][i];
+  },
+  render:{
+    0: a => {
+      const bank = a.fires
+        ? `<div class="ownerbad">⚠ bank.aperture.lab — <b>Transfer complete.</b> $${a.amount.toLocaleString("en-US")} → account att4ck3r. The victim saw a pizza coupon for 400&nbsp;ms.</div>`
+        : `<div class="s-empty">The victim's bank tab: ${a.cookieAttached ? "a request is on its way…" : "nothing happening yet."}</div>`;
+      const body = `<h1 class="s-h">Your page at attacker.example</h1>
+        <p class="s-sub">the victim is logged in at bank.aperture.lab in the next tab</p>
+        <div class="minirow"><label>Your HTML</label></div>
+        ${field("", a.q, "Host it", "<h1>Free pizza…</h1>")}
+        <div style="margin-top:14px"><pre class="src" style="padding:10px">${taint(esc(a.q))}</pre></div>
+        <div style="margin-top:10px">${bank}</div>`;
+      return `<div class="applayer">${siteFrame({ path:"attacker.example/pizza", search:false, body })}</div>`;
+    },
+    1: a => explain("The deputy",
+        "The browser enforces same-origin on <em>reading</em> responses — but <em>sending</em> a request to another origin was always allowed. And when it sends one, it attaches that origin's cookies, because as far as it knows, <em>you</em> are bank.aperture.lab's user.")
+      + `<pre class="src">${codeLines([
+          {t:`<span class="cm">// your page, attacker.example:</span>`},
+          {t:`document.forms[0].submit()`, hot:!!a.auto},
+          {t:`<span class="cm">// the victim's browser, one heartbeat later:</span>`},
+          {t:`<span class="cm">//   POST bank.aperture.lab/api/transfer</span>`},
+          {t:`<span class="cm">//   + Cookie: session=…            ← the browser adds this</span>`, hot:a.cookieAttached}
+        ])}</pre>`,
+    2: a => a.cookieAttached || a.form
+      ? `<pre class="src">${codeLines([
+          {t:`<span class="kw">POST</span> /api/transfer <span class="kw">HTTP/1.1</span>`, hot:a.post},
+          {t:`<span class="kw">Host:</span> bank.aperture.lab`},
+          {t:`<span class="kw">Origin:</span> https://attacker.example`, hot:true},
+          {t:`<span class="kw">Cookie:</span> session=<span class="str">…the VICTIM's valid login…</span>`, hot:a.cookieAttached},
+          a.form ? {t:``, hot:false} : {t:``, hot:false},
+          {t:`amount=${taint(String(a.amount || "…"))}`}
+        ])}</pre>${note(a.fires ? "warn" : "","Layer 2 · a perfectly authentic request","Look at what the attacker did <b>not</b> provide: no stolen cookie, no password. The browser supplied the credentials to a request it was tricked into sending — that is why it's called a <em>deputy</em>.")}`
+      : note("","Layer 2 · nothing sent yet","Build the form on L0 — method POST, action pointing at the bank — and this plane fills in."),
+    3: a => a.cookieAttached
+      ? note("warn","Layer 3 · the origin boundary is one-way","The request crossed origins carrying the destination's own cookie. Browsers allow cross-site POSTs by design (that's how half the web's redirects and forms work); the edge can't tell a wanted cross-site action from an unwanted one.")
+      : note("","Layer 3 · quiet","No cross-site request in flight."),
+    4: a => a.cookieAttached
+      ? `<pre class="src">${codeLines([
+          {t:`<span class="kw">@app.route</span>(<span class="str">"/api/transfer"</span>, methods=[<span class="str">"POST"</span>])`},
+          {t:`<span class="kw">@login_required</span>              <span class="cm"># ✓ the session is real…</span>`},
+          {t:`<span class="kw">def</span> transfer():`},
+          {t:`    amount = request.form[<span class="str">"amount"</span>]`},
+          {t:`    db.execute(<span class="str">"INSERT INTO transfers …"</span>)`, hot:!!a.fires},
+          {t:`    <span class="cm"># no CSRF token. no Origin check. nothing.</span>`, hot:true}
+        ])}</pre>${note("warn","Layer 4 · authenticated ≠ intended","The server asks one question — is this session valid? — and it is. The question it never asks: did the <em>user</em> initiate this?")}`
+      : note("","Layer 4 · standing by","The transfer endpoint is waiting. It verifies the session and nothing else."),
+    5: a => explain("What the attacker never needed",
+        "Every other lab in this track is about reaching something you shouldn't. This one is about the server mistaking <em>a valid request</em> for <em>a wanted request</em>.")
+      + kv([["Victim's password", "not needed", "ok"],
+            ["Stolen session cookie", "not needed — the browser delivers it", "bad"],
+            ["XSS on the bank", "not needed", "ok"],
+            ["The user's intent", "<b style='color:var(--breach)'>never checked</b>", "bad"]]),
+    6: a => {
+      const moved = a.fires ? a.amount : 0;
+      return `<table class="db"><caption>transfers — victim's account</caption>
+        <tr><th>id</th><th>to</th><th>amount</th><th>origin</th></tr>
+        <tr class="locked"><td>#881</td><td>landlord</td><td>$1,200.00</td><td>bank form</td></tr>
+        ${moved ? `<tr class="got"><td>#882</td><td><b>att4ck3r</b></td><td><b>$${moved.toLocaleString("en-US")}.00</b></td><td>attacker.example</td></tr>` : `<tr class="locked"><td>—</td><td>—</td><td>—</td><td>your page hasn't fired</td></tr>`}
+      </table>`
+        + (a.fires
+          ? note("warn","Layer 6 · the ledger doesn't keep 'why'","Row #882 is indistinguishable from a transfer the user wanted. Money moved; the only witness is the Origin header nobody read.")
+          : note("","Layer 6 · ledger unchanged","Complete the attack on L0 to write row #882."));
+    }
+  },
+  trace(a){ const S=i=>this.layerState(i,a);
+    const armed = a.form && a.post && a.bank;
+    return [ {h:"L0 · Surface",state:S(0),b:`Your page: <em>${esc((a.q || "").slice(0, 40))}${(a.q||"").length > 40 ? "…" : ""}</em>`},
+      {h:"L1 · Client",state:S(1),b:armed?`Browser will POST cross-site — cookie attached.`:`Static page. The deputy sleeps.`},
+      {h:"L2 · Request",state:S(2),b:a.cookieAttached?`Forged POST, victim's session.`:`No request yet.`},
+      {h:"L3 · Edge",state:S(3),b:a.fires?`<strong>Crossed origins, cookie on board.</strong>`:`Nothing crossing.`},
+      {h:"L4 · Server",state:S(4),b:a.fires?`<strong>Session valid → transfer executed.</strong>`:`Endpoint standing by.`},
+      {h:"L5 · Session",state:S(5),b:a.fires?`Valid ≠ intended.`:`—`},
+      {h:"L6 · Data",state:S(6),b:a.fires?`<strong>$${(a.amount||0).toLocaleString("en-US")} moved.</strong>`:`Ledger unchanged.`} ];
+  },
+  verdict(a){
+    return [ ["<form> present", a.form ? "yes" : "no", a.form ? "bad" : ""],
+      ["method=POST", a.post ? "yes" : "no", a.post ? "bad" : ""],
+      ["action → bank API", a.bank ? "yes" : "no", a.bank ? "bad" : ""],
+      ["auto-submits", a.auto ? "yes" : "no", a.auto ? "bad" : ""],
+      ["amount", a.amount ? "$" + a.amount : "—", a.fires ? "bad" : ""],
+      ["Lab", a.fires ? "Solved — the deputy fired" : "Not solved", a.fires ? "good" : ""] ];
+  },
+  defense:{
+    blurb:"A token the attacker can't read, a cookie that won't travel, or an Origin check — versus two very popular non-fixes.",
+    vectors:[
+      {q:'<form action="https://bank.aperture.lab/api/transfer" method="POST"><input name="amount" value="5000"></form><script>document.forms[0].submit()</script>', label:"script auto-submit"},
+      {q:'<form action="https://bank.aperture.lab/api/transfer" method="POST"><input name="amount" value="5000"></form><img src=x onerror="document.forms[0].submit()">', label:"handler auto-submit"},
+      {q:'<form action="https://bank.aperture.lab/api/transfer" method="POST"><input name="amount" value="5000"><input type="submit" autofocus></form><script>document.forms[0][document.forms[0].length-1].click()</script>', label:"synthetic click"}
+    ],
+    options:[
+      { id:"token", label:"Per-session CSRF token", code:`<input type="hidden" name="csrf" value="{{ session.csrf }}">\n…\nif request.form["csrf"] != session.csrf: abort(403)`,
+        apply(){ return { blocked:true, at:4, why:"The evil page would need the token's VALUE — and reading bank.aperture.lab's DOM from another origin is exactly what the same-origin policy forbids. All three vectors die at the same line." }; } },
+      { id:"samesite", label:"SameSite=Strict cookie", code:`Set-Cookie: session=…; Secure; HttpOnly; SameSite=Strict`,
+        apply(){ return { blocked:true, at:2, why:"Strict means the cookie is never attached to any cross-site request — script-submit, handler-submit or synthetic click. The POST arrives anonymous and bounces off @login_required." }; } },
+      { id:"origin", label:"Verify Origin header server-side", code:`if request.headers.get("Origin") not in ALLOWED_ORIGINS: abort(403)`,
+        apply(){ return { blocked:true, at:4, why:"Browsers set Origin on cross-site POSTs and pages cannot forge it. attacker.example is not in the list — 403 for all three vectors. (Add a same-site-GET fallback for old browsers and this holds.)" }; } },
+      { id:"https", label:"Secure + HttpOnly cookie flags", code:`Set-Cookie: session=…; Secure; HttpOnly`,
+        apply(){ return { blocked:false, at:4, why:"Good hygiene — against a DIFFERENT attack. The victim's browser is on HTTPS; the cookie is attached with full honors; the flags say nothing about who asked for the request." }; } },
+      { id:"amount", label:"Validate the amount server-side", code:`amount = int(request.form["amount"])\nassert 0 < amount <= 5000`,
+        apply(){ return { blocked:false, at:4, why:"$5,000 passes validation — it's a perfectly legal transfer. Nothing about this request is malformed; that's the whole problem." }; } }
+    ]
+  }
+};
+
 const LABS = [LAB_FOUNDATIONS,
-  LAB_IDOR, LAB_CRYPTO,
+  LAB_IDOR, LAB_LFI, LAB_CSRF, LAB_CRYPTO,
   LAB_SQLI, LAB_REFLECTED, LAB_DOM, LAB_WAF,
-  LAB_DESIGN, LAB_MISCONFIG, LAB_COMPONENTS, LAB_AUTH, LAB_JWT, LAB_LOGGING, LAB_SSRF];
+  LAB_DESIGN, LAB_MISCONFIG, LAB_COMPONENTS, LAB_AUTH, LAB_JWT, LAB_LOGGING, LAB_SSRF,
+  LAB_CMDI, LAB_LFI, LAB_CSRF];
 /* the frozen ids of the shipped labs — external files may replace their own
    kind (iterate on a reload), never the built-ins */
 const BUILTIN_IDS = new Set(LABS.map(l => l.id));
@@ -3818,7 +4347,13 @@ const CARD = {
   logging:        { sig:["a","a","a","a","a","x","d"],
     blurb:"The blue-team view: a full account takeover that leaves one log line and fires zero alerts." },
   ssrf:           { sig:["a","a","a","a","x","x","a"],
-    blurb:"“Import image from URL” fetches whatever you give it — including the cloud metadata endpoint. Steal the AWS keys." }
+    blurb:"“Import image from URL” fetches whatever you give it — including the cloud metadata endpoint. Steal the AWS keys." },
+  cmdi:           { sig:["a","a","a","a","x","x","a"],
+    blurb:"A diagnostic page glues your host into a shell command. <code>;</code>, <code>|</code> and backticks stop being text and become script — run <code>id</code>, read <code>/etc/passwd</code>." },
+  lfi:            { sig:["a","a","a","a","x","x","x"],
+    blurb:"A docs page joins your filename onto a folder. <code>../</code> climbs out — and an absolute path skips the join entirely. Read <code>/etc/passwd</code>, then the app's config." },
+  csrf:           { sig:["a","x","a","x","x","a","a"],
+    blurb:"You don't need the victim's password — you need their browser. Write the page that makes <em>it</em> send the transfer." }
 };
 
 /* ════════════════════════════════════════════════════════════════════
@@ -4736,7 +5271,7 @@ function buildHome(){
       </button>
     </div></section>    <section class="notes">
   <h2>How STRATA works</h2>
-  <p class="lede">STRATA turns a vulnerable app into a cross-section you fly through: seven planes stacked in depth, all rendering the same request at once. Fourteen labs ship in this file — Foundations, the OWASP Top 10, and the injection set — and the catalog takes any number more: a lab file is a plain <code>.js</code> away (see the authoring guide). The same instrument teaches every bug class without changing its rules.</p>
+  <p class="lede">STRATA turns a vulnerable app into a cross-section you fly through: seven planes stacked in depth, all rendering the same request at once. Seventeen labs ship in this file — Foundations, the OWASP Top 10, the injection set, and the access-control set — and the catalog takes any number more: a lab file is a plain <code>.js</code> away (see the authoring guide). The same instrument teaches every bug class without changing its rules.</p>
 
   <h3>These are real labs, not click-throughs</h3>
   <p>Every lab carries <b>objectives</b> in the side rail — phases of the actual attack, from “break the literal” to “exfiltrate the table.” You complete them by making the engine say so, which means <em>typing the payload yourself</em> (or editing the raw request — more on that below). Hints reveal progressively, rung by rung, and the final rung shows the payload — but a solve earned that way is labeled. The preset that completes the final objective stays locked until you’ve solved the lab. Progress persists in your browser.</p>
