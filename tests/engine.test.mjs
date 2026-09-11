@@ -8,9 +8,22 @@ globalThis.window = globalThis;
 const expose = `\n;globalThis.__T = { LABS, validateLab, md5, RAINBOW, b64url, b64urlDec, jwtToken };`;
 new Function(head + expose)();
 
+
+
 const T = globalThis.__T;
 let fails = 0;
 const ok = (cond, msg) => { if (!cond){ fails++; console.log("FAIL:", msg); } };
+
+/* HTML-faithful script extraction: the browser ends the script tag at the
+   FIRST literal </script>. A raw closer inside a JS string (a payload!)
+   silently truncates the app — every headless check with a greedy regex
+   passes while the page dies. This guard fails that loudly. */
+{
+  const first = html.indexOf("</script>");
+  const last = html.lastIndexOf("</script>");
+  ok(first === last, `strata.html has ${last - first > 0 ? "premature </script> closers — escape them as <\\/script> inside JS strings" : "OK"}`);
+}
+
 
 /* 1. every built-in lab passes our own validator */
 for (const L of T.LABS){
