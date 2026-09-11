@@ -61,7 +61,7 @@ python3 -m http.server 8641     # then visit http://127.0.0.1:8641/strata.html
 
 No build step, no `npm install`, no accounts, no backend. Progress persists in your browser's `localStorage` (`strata.progress.v1`) and never leaves your machine.
 
-<div align="center"><br><img src="docs/img/01-catalog.png" alt="The STRATA landing page and lab catalog, with an Attacker / Defender toggle and labs grouped by OWASP category." width="760"><br><sub>*The catalog — 17 built-in labs, grouped by category, in both Attacker and Defender directions.*</sub><br><br></div>
+<div align="center"><br><img src="docs/img/06-foundations.png" alt="STRATA's Foundations lab in cross-section: seven layers of one ordinary web request stacked in depth, with a taint trace on the right narrating each layer from the page down to the database." width="880"><br><sub>*The whole instrument in one glance — the Foundations tour, edge-on. Seven layers of a single request, from the page to the database. Every lab is this same machine with a different bug wired in.*</sub><br><br></div>
 
 ---
 
@@ -159,6 +159,8 @@ flowchart TD
 ## The lab catalog
 
 **17 built-in labs** span Foundations and the full OWASP Top 10. Ten of them flip to Defender.
+
+<div align="center"><br><img src="docs/img/01-catalog.png" alt="The STRATA catalog: labs grouped by OWASP category as cards — each showing a severity chip, difficulty, a signature strip, and a 'defender edition' tag — with a sticky track-nav pinned at the top for jumping between categories." width="880"><br><sub>*The catalog — grouped by category, with a sticky track-nav for jumping around; each card shows its severity, difficulty, taint signature, and whether it flips to Defender.*</sub><br></div>
 
 | # | Lab | Category | Difficulty | Obj. | Severity¹ | Defender | Intercept |
 |:--|:--|:--|:--|:-:|:--|:-:|:--|

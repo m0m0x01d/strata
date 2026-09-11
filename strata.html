@@ -1216,6 +1216,19 @@ select.labsel option{background:var(--strata); color:var(--ink)}
   padding:9px 18px;cursor:pointer;transition:color .15s,border-color .15s}
 .htab:hover{color:var(--ice)}
 .htab[aria-pressed="true"]{color:var(--ink);border-color:var(--signal)}
+/* sticky catalog nav — jump straight to any track without scrolling the hero */
+.catnav{position:sticky;top:0;z-index:30;display:flex;gap:7px;flex-wrap:nowrap;overflow-x:auto;
+  margin:14px auto 0;width:min(1080px,calc(100% - 48px));padding:9px 2px;
+  background:color-mix(in srgb,var(--void) 86%,transparent);backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--rule);scrollbar-width:thin}
+.catnav::-webkit-scrollbar{height:6px}
+.catnav::-webkit-scrollbar-thumb{background:var(--rule);border-radius:3px}
+.catchip{flex:0 0 auto;font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.05em;
+  color:var(--dim);background:var(--strata);border:1px solid var(--rule);border-radius:999px;
+  padding:7px 12px;cursor:pointer;white-space:nowrap;transition:color .15s,border-color .15s}
+.catchip:hover{color:var(--ink);border-color:var(--signal)}
+.catchip b{color:var(--ice);font-weight:700;margin-left:5px}
+.track,.notes{scroll-margin-top:58px}   /* clear the sticky catnav when jumped to */
 .defnote{font-size:11.5px;color:var(--dim);margin:2px 2px 10px;line-height:1.5}
 .dopt{display:block;width:100%;text-align:left;margin:0 0 8px;padding:9px 11px;background:var(--strata);
   border:1px solid var(--rule);border-radius:8px;cursor:pointer;transition:border-color .15s}
@@ -4918,11 +4931,23 @@ const state = { q:"", active:0, cross:false, analysis:null, source:"boot", ix:fa
 
 /* lab picker */
 function buildPicker(){
-  const groups = {};
-  LABS.forEach(l => (groups[l.cat] ??= []).push(l));
-  el("labsel").innerHTML = Object.entries(groups).map(([cat, ls]) =>
-    `<optgroup label="${esc(cat)}">${ls.map(l => `<option value="${l.id}">${esc(l.code)} · ${esc(l.title)}</option>`).join("")}</optgroup>`
-  ).join("");
+  // A 🛡 marks a lab with a defender edition. On the defender side the picker
+  // groups those first (they're the only ones that stay in defend) and warns
+  // that the rest drop you back to attacker — so a jump is never a surprise.
+  const opt = l => `<option value="${l.id}">${esc(l.code)} · ${esc(l.title)}${l.defense ? " · 🛡" : ""}</option>`;
+  const sel = el("labsel");
+  if (state.mode === "defend"){
+    const def = LABS.filter(l => l.defense), atk = LABS.filter(l => !l.defense);
+    sel.innerHTML =
+      `<optgroup label="🛡 Defender editions">${def.map(opt).join("")}</optgroup>`
+      + (atk.length ? `<optgroup label="⚔ Attacker only — jumping here switches sides">${atk.map(opt).join("")}</optgroup>` : "");
+  } else {
+    const groups = {};
+    LABS.forEach(l => (groups[l.cat] ??= []).push(l));
+    sel.innerHTML = Object.entries(groups).map(([cat, ls]) =>
+      `<optgroup label="${esc(cat)}">${ls.map(opt).join("")}</optgroup>`).join("");
+  }
+  if (typeof LAB !== "undefined" && LAB) sel.value = LAB.id;
 }
 el("labsel").addEventListener("change", e => buildLab(e.target.value, state.mode));   // the picker keeps your side; goHome resets to attack
 buildPicker();
@@ -4981,7 +5006,7 @@ function buildLab(id, mode){
   const labSev = sevOf(LAB);
   el("labDiff").textContent = LAB.difficulty + (labSev ? ` · ${labSev[0]} ${labSev[1]}` : "");
   el("labGoal").innerHTML = LAB.goal;
-  el("labsel").value = LAB.id;
+  buildPicker();   // re-group for the current side, then select this lab
   el("presetLbl").textContent = LAB.consoleLabel || "Payloads";
 
   // intercept affordance — a lab without a wire gets the lesson, not the tool
@@ -5738,6 +5763,7 @@ function buildHome(){
   const shown = defending ? LABS.filter(l => l.defense) : LABS;
   const order = [], byCat = {};
   shown.forEach(l => { if (!byCat[l.cat]){ byCat[l.cat] = []; order.push(l.cat); } byCat[l.cat].push(l); });
+  const slug = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
   const solvedP = l => { const p = PROGRESS[l.id]; return p && (p.solved || p.solvedWithHelp); };
   const defendedP = l => !!(PROGRESS[l.id] && PROGRESS[l.id].defended);
@@ -5771,7 +5797,7 @@ function buildHome(){
     ? order.map(cat => {
         const ls = byCat[cat];
         const n = defending ? ls.filter(defendedP).length : solvedCount(ls);
-        return `<section class="track"><h2 class="track-h">${esc(cat)}
+        return `<section class="track" id="track-${slug(cat)}"><h2 class="track-h">${esc(cat)}
           <span class="tcount">${n ? `${n}/${ls.length} ${defending ? "patched" : "solved"}` : `${ls.length} ${ls.length === 1 ? "lab" : "labs"}`}</span></h2>
           <div class="cardgrid">${ls.map(card).join("")}</div></section>`;
       }).join("")
@@ -5812,6 +5838,12 @@ function buildHome(){
     <button class="htab" id="tabAttack" role="tab" aria-pressed="${!defending}">Attacker</button>
     <button class="htab" id="tabDefend" role="tab" aria-pressed="${defending}">Defender</button>
   </div>
+  <nav class="catnav" aria-label="Jump to a track">
+    ${order.map(cat => `<button class="catchip" data-jump="track-${slug(cat)}">${esc(cat)}<b>${byCat[cat].length}</b></button>`).join("")}
+    <button class="catchip" data-jump="track-yours">＋ Your labs</button>
+    <button class="catchip" data-jump="track-shelf">☁ Shelf</button>
+    ${defending ? "" : `<button class="catchip" data-jump="track-how">How it works</button>`}
+  </nav>
   <div class="home-inner">
     <header class="hero">
       <div class="hero-copy">
@@ -5837,7 +5869,7 @@ function buildHome(){
       ${stack}
     </header>
     ${tracks}
-    <section class="track"><h2 class="track-h">Your labs<span class="tcount">lab files · validated on load</span></h2><div class="cardgrid">
+    <section class="track" id="track-yours"><h2 class="track-h">Your labs<span class="tcount">lab files · validated on load</span></h2><div class="cardgrid">
       <button class="labcard addlab" id="addLabBtn" type="button">
         <div class="lc-top"><span class="lc-code">＋</span></div>
         <div class="lc-title">Load a lab file</div>
@@ -5845,7 +5877,7 @@ function buildHome(){
         <div class="lc-strip"><span class="lc-go">Authoring docs ›</span></div>
       </button>
     </div></section>
-    <section class="track"><h2 class="track-h">Community shelf<span class="tcount">hash-verified · sandboxed · opt-in network</span></h2><div class="cardgrid">
+    <section class="track" id="track-shelf"><h2 class="track-h">Community shelf<span class="tcount">hash-verified · sandboxed · opt-in network</span></h2><div class="cardgrid">
       <button class="labcard addlab" id="shelfBtn" type="button">
         <div class="lc-top"><span class="lc-code">☁</span></div>
         <div class="lc-title">Browse a community catalog</div>
@@ -5853,7 +5885,7 @@ function buildHome(){
         <div class="lc-strip"><span class="lc-go">Open the shelf ›</span></div>
       </button>
     </div></section>
-${defending ? "" : `    <section class="notes">
+${defending ? "" : `    <section class="notes" id="track-how">
   <h2>How STRATA works</h2>
   <p class="lede">STRATA turns a vulnerable app into a cross-section you fly through: seven planes stacked in depth, all rendering the same request at once. Seventeen labs ship in this file — Foundations, the OWASP Top 10, the injection set, and the access-control set — and the catalog takes any number more: a lab file is a plain <code>.js</code> away (see the authoring guide). The same instrument teaches every bug class without changing its rules.</p>
 
@@ -5901,6 +5933,11 @@ ${defending ? "" : `    <section class="notes">
       else if (b.id === "addLabBtn") pickLabFile();
       else if (b.id === "shelfBtn") openShelf();
     }));
+  [...el("home").querySelectorAll(".catchip")].forEach(b =>
+    b.addEventListener("click", () => {
+      const t = el(b.dataset.jump);
+      if (t) t.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
+    }));
   el("homeThemeBtn").addEventListener("click", toggleTheme);
   el("tabAttack").addEventListener("click", () => { if (homeTab !== "attack"){ homeTab = "attack"; buildHome(); } });
   el("tabDefend").addEventListener("click", () => { if (homeTab !== "defend"){ homeTab = "defend"; buildHome(); } });
@@ -5912,6 +5949,19 @@ ${defending ? "" : `    <section class="notes">
     const t = el("home").querySelector(".track");
     if (t) t.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
   });
+  // the homebar is sticky at top:0 — pin the catnav directly beneath it (not
+  // behind it), and give every jump target enough scroll-margin to clear both.
+  const placeCatnav = () => {
+    const hb = el("home").querySelector(".homebar"), cn = el("home").querySelector(".catnav");
+    if (!hb || !cn) return;
+    const h = hb.offsetHeight;
+    cn.style.top = h + "px";
+    const clear = (h + cn.offsetHeight + 10) + "px";
+    el("home").querySelectorAll(".track, .notes").forEach(t => t.style.scrollMarginTop = clear);
+  };
+  requestAnimationFrame(placeCatnav);
+  if (!buildHome._resize){ buildHome._resize = () => placeCatnav(); window.addEventListener("resize", () => buildHome._resize()); }
+  else buildHome._resize = placeCatnav;   // keep the latest render's measurement, one listener total
 }
 
 /* file picker + drag-drop for lab files */
