@@ -204,6 +204,47 @@ Write 2–4 steps that mirror the real attack: recon → first effect →
 impact. Hints escalate: nudge toward a layer → describe the technique →
 the last rung reveals the payload. One sentence each, in the lab's voice.
 
+### Defender editions (optional `defense` block)
+
+A lab with `defense` data appears on the home page's **Defender** tab.
+The student deploys candidate patches; the engine runs the attack battery
+against each choice, live. Add it to teach the fix, not just the bug:
+
+```js
+defense: {
+  blurb: "HTML for the defender card — why patching here matters.",
+  vectors: [                       // attacks that MUST breach the unpatched lab
+    { q: "' UNION SELECT id FROM users--", label: "UNION exfil" },
+    { q: "' OR 1=1#",               label: "tautology" }
+  ],
+  options: [                       // candidate patches, ≥2
+    { id: "parameterize", label: "Parameterized query",
+      code: 'db.execute("… WHERE name LIKE ?", (q,))',   // shown as the patch
+      apply(q){                                          // the honest engine
+        return { blocked: true, at: 4,
+                 why: "the parser never sees your bytes as syntax" };
+      } },
+    { id: "hide-errors", label: "Hide SQL errors", code: "except: return 500()",
+      apply(){ return { blocked: false, at: 5,
+                        why: "quieter, not safer — the UNION still runs" }; } }
+  ]
+}
+```
+
+The rules the validator enforces — they ARE the lesson:
+
+- **vectors** are real attacks: each one must `solved()`-breach the
+  unpatched lab (≥2 of them).
+- `apply(q)` answers per vector: `{ blocked, at: <layer index>, why }`.
+  `at` is where the attack dies — the panel shows "✓ dies at L4".
+- **At least one option must block every vector** (the lab is fixable)
+  **and at least one must fail** (wrong fixes are the pedagogy: hide the
+  errors, add `LIMIT 1`, put quotes around it — the engine shows why
+  they don't hold).
+- Write `apply` with the same honesty as `analyze`: prefer re-running
+  your own engine (escape, strip, resolve, classify) over returning
+  hardcoded booleans. See `labs/xss-waf-plus.lab.js` for a full example.
+
 ### Wire / intercept mode
 
 With a `wire`, the student can toggle **Intercept** and edit the raw HTTP
@@ -234,6 +275,24 @@ whose challenge changed, its saved progress resets (progress is
 fingerprinted by step ids + title). `registerLab(lab, { silent: true })`
 registers without navigating; by default the catalog rebuilds and your lab
 opens immediately.
+
+**Two load paths, two trust models.** A file *you* drop in runs with the
+page's full privileges — validation checks shape, not safety; only load
+files you trust. A file loaded through the **community shelf** is
+different: its SHA-256 is verified against the catalog entry, and it runs
+inside a **sandboxed worker** — no DOM, no `localStorage`, no network from
+the lab, and everything it renders is sanitized on the way back in. For
+sandbox compatibility: no `domMode`, and custom `wire.build`/`parse`
+disable intercept (the standard wire types work). The worker ships the
+same helper surface as `STRATA.helpers` on the page.
+
+**Optional CLI** (the app itself never needs it):
+
+```sh
+node scripts/strata.mjs new my-lab       # scaffold from the template
+node scripts/strata.mjs validate labs/my-lab.lab.js
+node scripts/strata.mjs catalog          # refresh labs/catalog.json hashes
+```
 
 Add `?perf` to the URL for the timing HUD if you want to see what your
 `analyze`/renders cost.

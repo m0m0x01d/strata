@@ -1,0 +1,35 @@
+name: ci
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Engine syntax
+        run: |
+          python3 - <<'PY'
+          import re
+          html = open("strata.html").read()
+          m = re.search(r"<script>\n(.*)</script>", html, re.S)
+          open("/tmp/engine.js", "w").write(m.group(1))
+          PY
+          node --check /tmp/engine.js
+      - name: Engine + regression + sandbox + lab files
+        run: |
+          node tests/engine.test.mjs
+          node tests/regression.test.mjs
+          node tests/sandbox.test.mjs
+          node tests/labs.test.mjs
+      - name: Community labs validate (CLI)
+        run: node scripts/strata.mjs validate labs/*.lab.js
+      - name: Catalog hashes current
+        run: |
+          node scripts/strata.mjs catalog
+          git diff --exit-code -- labs/catalog.json || { echo "labs/catalog.json hashes are stale — commit the update"; exit 1; }
