@@ -398,11 +398,6 @@ pre.src .hot{background:var(--taint-wash); display:block; margin:0 -14px; paddin
 .empty{padding:16px; text-align:center; color:var(--dim); font-size:11.5px}
 
 /* L5 — query anatomy */
-.sqlbox{
-  font-family:var(--mono); font-size:12px; line-height:1.85; word-break:break-word;
-  padding:11px 12px; border:1px solid var(--rule); border-radius:5px; background:var(--void);
-}
-.sqlbox.bad{border-color:var(--breach)}
 .caret{color:var(--breach); font-weight:700}
 
 /* intent vs. reality — the two readings of the same 84 characters */
@@ -843,7 +838,7 @@ select.labsel option{background:var(--strata); color:var(--ink)}
 .alertsim .abar{padding:13px 16px 4px; font-size:13px; font-weight:600; color:#1b1f27}
 .alertsim .amsg{padding:2px 16px 16px; font-size:13px; color:#374151; word-break:break-word}
 .alertsim .afoot{display:flex; justify-content:flex-end; gap:8px; padding:0 14px 14px; background:transparent}
-.alertsim .ok{padding:7px 20px; border-radius:7px; border:0; background:#2f6bff; color:#fff;
+.alertsim .ok{cursor:pointer; padding:7px 20px; border-radius:7px; border:0; background:#2f6bff; color:#fff;
   font-family:var(--sans); font-size:12.5px; font-weight:600; letter-spacing:0; text-transform:none; cursor:pointer}
 
 /* realistic WAF/CDN block page (light) */
@@ -1305,7 +1300,7 @@ select.labsel option{background:var(--strata); color:var(--ink)}
    cross-section, trace, console) is lab-agnostic and reads the active lab.
    ════════════════════════════════════════════════════════════════════ */
 
-const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const clip = (s, n) => s.length > n ? s.slice(0, n) + "…" : s;
 
@@ -1427,8 +1422,11 @@ function readTokens(){
 
 /* ── Persistent progress (objectives, hints used, solves) ─────────── */
 const STORE_KEY = "strata.progress.v1";
-let PROGRESS = {};
-try { PROGRESS = JSON.parse(localStorage.getItem(STORE_KEY)) || {}; } catch(_){ PROGRESS = {}; }
+let PROGRESS = Object.create(null);
+try {
+  const stored = JSON.parse(localStorage.getItem(STORE_KEY));
+  if (stored && typeof stored === "object") PROGRESS = Object.assign(Object.create(null), stored);
+} catch(_){ PROGRESS = Object.create(null); }
 function saveProg(){ try { localStorage.setItem(STORE_KEY, JSON.stringify(PROGRESS)); } catch(_){} }
 function progFor(id){ return (PROGRESS[id] ??= { steps:{}, hints:{}, solved:false, solvedWithHelp:false }); }
 function labUnlocked(lab){ const p = PROGRESS[lab.id]; return !!(p && (p.solved || p.solvedWithHelp)); }
@@ -1470,7 +1468,21 @@ function taintMarkup(frag){
      'innerHTML' — assigned via an innerHTML sink
                    → the <script> node is built but never executed.
    That difference is the whole DOM-vs-reflected lesson. */
-const ALERT_CALL = /(alert|confirm|prompt|print)\s*(\(|`)/i;
+/* The alert() call detector. Attribute values are entity-decoded before
+   testing (real browsers decode them), \uXXXX escapes resolved, and a bare
+   template literal is NOT a call. */
+const ALERT_CALL = /(alert|confirm|prompt|print)\s*\(/i;
+function entDec(s){
+  return String(s)
+    .replace(/&(?:#x([0-9a-f]+)|#(\d+)|([a-z]+));/gi, (m, hx, d, name) => {
+      if (hx) return String.fromCharCode(parseInt(hx, 16));
+      if (d) return String.fromCharCode(+d);
+      const named = { tab:"\t", colon:":", lpar:"(", rpar:")", sol:"/", quot:"\"" };
+      return named[name ? name.toLowerCase() : ""] ?? m;
+    })
+    .replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+}
+function callsAlert(body){ return ALERT_CALL.test(entDec(body)); }
 
 function alertArg(payload){
   const m = /(?:alert|confirm|prompt|print)\s*\(\s*([^)]*)\)/i.exec(payload);
@@ -1479,12 +1491,28 @@ function alertArg(payload){
   return arg === "" ? "" : arg;
 }
 
-/* Which tag+handler combinations fire with no user interaction. */
-function autoFires(tag, handler, attrs){
-  if (handler === "onload"  && ["svg","body","iframe","image","object","frameset"].includes(tag)) return true;
-  if (handler === "onerror" && ["img","image","script","source","video","audio","link","input"].includes(tag)) return true;
-  if (handler === "onfocus" && /\bautofocus\b/i.test(attrs)) return true;
-  return false;  // onmouseover / onclick / onpointerover / ontoggle need interaction
+/* Which tag+handler combinations fire with no user interaction. tagText is
+   the WHOLE tag (attribute order must not matter); resource-bearing handlers
+   need something to load, and mode distinguishes page-load parsing (body
+   onload fires) from innerHTML fragments (it doesn't). */
+function autoFires(tag, handler, tagText, mode = "parser"){
+  const resource = /\b(?:src|href|data|poster)\s*=|type\s*=\s*["']?image/i.test(tagText);
+  if (handler === "onload"){
+    if (tag === "svg") return true;
+    if (tag === "body" || tag === "frameset") return mode === "parser";
+    if (["iframe", "object", "image"].includes(tag)) return resource;
+    return false;
+  }
+  if (handler === "onerror"){
+    if (["img", "image", "script", "source", "video", "audio", "link", "input"].includes(tag)) return resource;
+    return false;
+  }
+  if (handler === "onfocus")
+    return ["input", "textarea", "select", "button"].includes(tag) && /\bautofocus\b/i.test(tagText);
+  if (handler === "ontoggle") return tag === "details" && /\bopen\b/i.test(tagText);
+  if (handler === "onstart") return tag === "marquee";
+  if (handler === "onbegin") return tag === "animate";
+  return false;  // click / mouseover / pointerover genuinely need the user
 }
 
 function scanVectors(html, mode){
@@ -1494,11 +1522,14 @@ function scanVectors(html, mode){
   const scriptRe = /<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi;
   let m;
   while ((m = scriptRe.exec(html))){
-    const calls = ALERT_CALL.test(m[1]);
+    const hasSrc = /\bsrc\s*=/i.test(m[0]);
+    const calls = callsAlert(m[1]);
     if (mode === "parser"){
-      vectors.push({ code:"<script>…<\/script>", fires: calls, interaction:false,
-        why: calls ? "A <script> parsed at page load runs immediately."
-                   : "A <script> runs, but this one calls nothing." });
+      vectors.push({ code:"<script>…<\/script>", fires: calls && !hasSrc, interaction:false,
+        why: hasSrc
+          ? "An external <script> would load and run — this simulation can't fetch it, and no inline call exists."
+          : calls ? "A <script> parsed at page load runs immediately."
+                  : "A <script> runs, but this one calls nothing." });
     } else {
       vectors.push({ code:"<script>…<\/script>", fires:false, interaction:false,
         why: "Built by the innerHTML parser as a node, but the browser never runs script inserted through innerHTML." });
@@ -1510,8 +1541,10 @@ function scanVectors(html, mode){
   while ((m = onRe.exec(html))){
     const tag = m[1].toLowerCase(), handler = "on" + m[3].toLowerCase();
     const body = m[4] ?? m[5] ?? m[6] ?? "";
-    const calls = ALERT_CALL.test(body);
-    const auto = autoFires(tag, handler, m[2]);
+    const tagEnd = html.indexOf(">", m.index);   // the WHOLE tag — attrs before AND after the handler
+    const tagText = html.slice(m.index, tagEnd === -1 ? html.length : tagEnd + 1);
+    const calls = callsAlert(body);
+    const auto = autoFires(tag, handler, tagText, mode);
     vectors.push({
       code:`<${tag} ${handler}=…>`,
       fires: auto && calls,
@@ -1519,14 +1552,14 @@ function scanVectors(html, mode){
       why: auto
         ? (calls ? `${handler} on <${tag}> fires on load — no interaction needed.`
                  : `${handler} on <${tag}> fires, but calls nothing.`)
-        : `${handler} needs a user action (hover/click/focus) before it runs.`
+        : `${handler} never runs on its own — it needs the user to act first.`
     });
   }
 
   // 3) javascript: URIs
   const uriRe = /<(a|iframe)\b[^>]*?\b(?:href|src)\s*=\s*["']?\s*javascript:([^"'>]*)/gi;
   while ((m = uriRe.exec(html))){
-    const tag = m[1].toLowerCase(), calls = ALERT_CALL.test(m[2]), auto = tag === "iframe";
+    const tag = m[1].toLowerCase(), calls = callsAlert(m[2]), auto = tag === "iframe";
     vectors.push({ code:`<${tag} …=javascript:…>`, fires: auto && calls, interaction: !auto,
       why: auto ? "iframe src=javascript: runs on load."
                 : "A javascript: link runs only when clicked." });
@@ -1564,7 +1597,6 @@ function buildDomTreeRaw(contextHtml, hostSel){
         if (t) items += `<li><span class="node"><span class="txt">${esc(clip(t, 40))}</span></span></li>`;
       } else if (ch.nodeType === 1){
         const tag = ch.tagName.toLowerCase();
-        const injected = ch.hasAttribute("data-inj") || true; // children of host are the injected subtree
         let attrs = "";
         [...ch.attributes].forEach(at => {
           if (at.name === "data-inj") return;
@@ -1611,9 +1643,11 @@ function intendedVsParsed(prefix, payload, suffix){
   return intended + parsed;
 }
 
-function vectorList(vectors){
+function vectorList(vectors, hasMarkup){
   if (!vectors.length) return note("", "No markup vectors",
-    "Your input parsed as plain text — there is nothing here the browser would execute.");
+    hasMarkup
+      ? "Your tags parsed as real markup — but nothing here forms a vector the browser would execute."
+      : "Your input parsed as plain text — there is nothing here the browser would execute.");
   return `<div class="vecs">` + vectors.map(v => {
     const cls = v.fires ? "fires" : v.interaction ? "click" : "inert";
     const st  = v.fires ? "fires" : v.interaction ? "needs click" : "inert";
@@ -1634,6 +1668,13 @@ function alertSim(host, payload){
     </div></div>`;
 }
 const solvedBanner = `<div class="solvebanner"><span class="tick">✓</span> Lab solved — alert() executed in the victim’s browser.</div>`;
+
+/* The simulated alert shows once per payload; its OK button dismisses it
+   (bound in bindSurface) until the payload changes. */
+function alertOnce(fired, host, payload){
+  return fired && typeof state !== "undefined" && state.alertSeen !== payload
+    ? alertSim(host, payload) : "";
+}
 
 /* Trace/callout state → CSS class shared by all labs. */
 const STEP_CLASS = { present:"on", promoted:"on", sink:"on sink", boundary:"on crossed", blocked:"on crossed", absent:"absent", clean:"" };
@@ -1656,14 +1697,19 @@ const USERS = [
 ];
 const TPL_A = "SELECT id, name, price FROM products WHERE name LIKE '%";
 const TPL_B = "%' AND released = 1";
-const SQL_SYN = /['"();=\-#*]|\bOR\b|\bUNION\b|\bSELECT\b|\bFROM\b|\bAND\b/gi;
 
 function sqlLex(sql){
   let inStr = false, litStart = -1, comment = -1;
   const spans = []; let i = 0;
   while (i < sql.length){
     const c = sql[i];
-    if (inStr){ if (c === "'"){ inStr = false; spans.push([litStart, i + 1]); } i++; continue; }
+    if (inStr){
+      if (c === "'"){
+        if (sql[i + 1] === "'"){ i += 2; continue; }   // '' is an escaped quote, not a close
+        inStr = false; spans.push([litStart, i + 1]);
+      }
+      i++; continue;
+    }
     if (c === "'"){ inStr = true; litStart = i; i++; continue; }
     if (c === "-" && sql[i+1] === "-"){ comment = i; break; }
     if (c === "#"){ comment = i; break; }
@@ -1671,27 +1717,75 @@ function sqlLex(sql){
   }
   return { unterminated: inStr, litStart, comment, spans };
 }
+
+/* The SQL the parser actually acts on: string literals and comments blanked
+   to spaces (offsets preserved). Every semantic decision below runs on THIS
+   view, so keywords sitting inside the string can never be mistaken for
+   SQL — the same rule the Intended/Parsed panes teach. */
+function sqlCodeView(a){
+  const r = sqlRegions(a);
+  return a.sql.split("").map((c, i) => (r[i] === "lit" || r[i] === "cmt") ? " " : c).join("");
+}
+
 function sqliAnalyze(q){
   const sql = TPL_A + q + TPL_B;
   const tStart = TPL_A.length, tEnd = tStart + q.length;
   const lx = sqlLex(sql);
   const a = { q, sql, tStart, tEnd, lex: lx, error:null, rows:[], leaked:[],
-              releasedFilter:true, tautology:false, union:false };
+              releasedFilter:true, tautology:false, union:false, unionLiterals:null };
   if (lx.unterminated){
     a.error = { at: lx.litStart, msg:'sqlite3.OperationalError: unrecognized token: "\'"' };
     return a;
   }
-  const live = lx.comment >= 0 ? sql.slice(0, lx.comment) : sql;
-  a.releasedFilter = /released\s*=\s*1/i.test(live);
-  a.tautology = /\bOR\b\s+(?:1\s*=\s*1|'1'\s*=\s*'1'|true)\b/i.test(live);
-  a.union = /\bUNION\b\s+(?:ALL\s+)?\bSELECT\b/i.test(live) && /\busers\b/i.test(live);
+  const code = sqlCodeView(a);
+  a.releasedFilter = /released\s*=\s*1/i.test(code);
+  // A top-level OR makes the template's own LIKE '%' a standalone TRUE
+  // disjunct (AND binds tighter), so the released filter only guards the
+  // other side of the OR — every row comes back, withheld or not.
+  a.tautology = /\bOR\b/i.test(code);
+
+  // Payload bytes that became CODE: a tiny grammar check with sqlite3's
+  // own error messages. `' FOOBAR--` and stacked statements die here.
+  const pc = code.slice(tStart, tEnd).replace(/\s+/g, " ").trim();
+  if (pc){
+    if (pc.includes(";")){
+      a.error = { at: tStart, msg:"sqlite3.OperationalError: You can only execute one statement at a time." };
+      return a;
+    }
+    const ob = /^order\s+by\s+(\d+)$/i.exec(pc);
+    if (ob && +ob[1] > 3){
+      a.error = { at: tStart, msg:"sqlite3.OperationalError: 1st ORDER BY term out of range - should be between 1 and 3" };
+      return a;
+    }
+    if (!/^(?:or|and)\b/i.test(pc) && !ob && !/^union\b/i.test(pc)){
+      a.error = { at: tStart, msg:`sqlite3.OperationalError: near "${pc.split(/\s+/)[0]}": syntax error` };
+      return a;
+    }
+  }
+
+  // UNION: the outer query selects three columns — sqlite enforces the count.
+  const um = /\bUNION\s+(?:ALL\s+)?SELECT\s+(.+?)\s+FROM\s+([a-z_][\w]*)/i.exec(code);
+  if (um){
+    if (um[2].toLowerCase() !== "users"){
+      a.error = { at: tStart, msg:`sqlite3.OperationalError: no such table: ${um[2]}` };
+      return a;
+    }
+    a.union = true;
+    const terms = um[1].split(",").map(t => t.trim()).filter(t => t !== "");
+    if (terms.length !== 3){
+      a.error = { at: tStart, msg:"sqlite3.OperationalError: SELECTs to the left and right of UNION do not have the same number of result columns" };
+      return a;
+    }
+    if (terms.every(t => /^(id|email|password)$/i.test(t))) a.leaked = USERS.slice();
+    else a.unionLiterals = terms;   // 3 columns — of constants, not the table
+  }
+
   let rows;
-  if (a.tautology) rows = PRODUCTS.slice();
+  if (a.tautology || a.union) rows = PRODUCTS.slice();
   else { const cut = q.indexOf("'"); const needle = (cut >= 0 ? q.slice(0, cut) : q).toLowerCase();
          rows = PRODUCTS.filter(p => p.name.toLowerCase().includes(needle)); }
-  if (a.releasedFilter) rows = rows.filter(p => p.released === 1);
+  if (a.releasedFilter && !a.tautology && !a.union) rows = rows.filter(p => p.released === 1);
   a.rows = rows;
-  if (a.union) a.leaked = USERS.slice();
   return a;
 }
 function sqlRegions(a){
@@ -1808,7 +1902,7 @@ const LAB_SQLI = {
         {t:`    <span class="cm"># ↓ the entire bug, on one line</span>`},
         {t:`    sql = <span class="kw">f</span><span class="str">"…WHERE name LIKE '%{</span>${taint("q")}<span class="str">}%' AND released = 1"</span>`, hot:true},
         {t:`    <span class="kw">return</span> jsonify(db.execute(sql).fetchall())`}
-      ])}${note("warn","Layer 4 · trust boundary crossed",`An f-string pastes ${taint(a.q)} into the query <b>as text</b>, and the database parses that text as a language. The fix is one plane wide: <code style="color:var(--ice)">db.execute(sql, (q,))</code>.`)}`,
+      ])}</pre>${note("warn","Layer 4 · trust boundary crossed",`An f-string pastes ${taint(a.q)} into the query <b>as text</b>, and the database parses that text as a language. The fix is one plane wide: <code style="color:var(--ice)">db.execute(sql, (q,))</code>.`)}`,
     5: a => {
       const { sql, tStart, tEnd, lex: lx } = a;
       const body = `<div class="reading intent"><div class="rh"><b>Intended</b><span>— your bytes safely inside one string literal</span></div><div class="codebox">${sqlReadIntent(a)}</div></div>
@@ -1820,8 +1914,9 @@ const LAB_SQLI = {
       if (a.error) v = note("warn","Parser verdict · rejected",`The lexer opened a string literal at <b>offset ${a.error.at}</b> and hit end of input still inside it. Your <code style="color:var(--taint)">'</code> closed the literal the developer opened. <b>An error here is how you learn a quote reaches the parser.</b>`);
       else { const parts=[];
         if (lx.comment>=0) parts.push(`your <code style="color:var(--taint)">--</code> severed everything after offset ${lx.comment}`);
-        if (a.tautology) parts.push(`<code style="color:var(--taint)">OR 1=1</code> is true for every row`);
-        if (a.union) parts.push(`your <code style="color:var(--taint)">UNION SELECT</code> appended a result set from <code style="color:var(--ice)">users</code>`);
+        if (a.tautology) parts.push(`a top-level <code style="color:var(--taint)">OR</code> made the LIKE clause true for every row on its own`);
+        if (a.union) parts.push(`your <code style="color:var(--taint)">UNION SELECT</code> appended three-column rows from <code style="color:var(--ice)">users</code>`);
+        if (a.unionLiterals) parts.push(`your UNION selected the constants <code style="color:var(--taint)">${a.unionLiterals.map(esc).join(", ")}</code>, not the table's columns`);
         v = parts.length ? note("warn","Parser verdict · accepted as syntax", parts.join(". ") + ".")
                          : note("","Parser verdict · accepted as data","Every byte stayed inside the literal. This is the safe baseline you are trying to break."); }
       return body + ruler + v;
@@ -1836,30 +1931,38 @@ const LAB_SQLI = {
       let n;
       if (a.error) n = note("warn","Layer 6 · nothing executed","The statement never reached the planner. A stack trace went to the user instead.");
       else if (a.leaked.length) n = note("warn","Layer 6 · authorization never consulted",`<b>${plural(a.leaked.length,"credential row","credential rows")}</b> left the database. No code checked whether this session may read <code style="color:var(--ice)">users</code>.`);
+      else if (a.unionLiterals) n = note("warn","Layer 6 · constants, not columns","Your UNION ran — but it selected three constants, so the rows came back as <code>1, 2, 3</code> literals. SELECT the columns you want: <code style='color:var(--ice)'>id, email, password</code>.");
       else if (unreleased) n = note("warn",`Layer 6 · ${unreleased} withheld rows reached`,`<code style="color:var(--ice)">released = 1</code> was the only gate on unpublished inventory, and it lived inside the string you control.`);
       else n = note("","Layer 6 · as intended","Only published products matched.");
       return prod + usr + n;
     }
   },
   trace(a){
-    const syn = (a.q.match(SQL_SYN) || []).join("").length, rows = a.rows.length + a.leaked.length;
+    // count payload bytes the lexer placed OUTSIDE the literal — the bytes
+    // that actually became syntax (matches what the Parsed pane shows)
+    let syn = 0;
+    if (!a.error){
+      const r = sqlRegions(a);
+      for (let i = a.tStart; i < a.tEnd; i++) if (r[i] !== "lit") syn++;
+    }
+    const rows = a.rows.length + a.leaked.length;
     const st = this.layerState.bind(this);
     return [
-      {h:"L0 · Surface", state:st(0,a), b:`<em>${a.q.length}</em> ${a.q.length===1?"byte":"bytes"} captured.`},
+      {h:"L0 · Surface", state:st(0,a), b:`<em>${a.q.length}</em> ${plural(a.q.length,"byte","bytes")} captured.`},
       {h:"L1 · DOM",     state:st(1,a), b:`Stored as <em>input#q.value</em>.`},
       {h:"L2 · Client",  state:st(2,a), b:`Read into <em>q</em>, URL-encoded.`},
       {h:"L3 · Wire",    state:st(3,a), b:`Sent as a query parameter. <strong>No validation ran.</strong>`},
       {h:"L4 · Server",  state:st(4,a), b:`Interpolated into the query string. <strong>Trust boundary crossed.</strong>`},
-      {h:"L5 · Query",   state:st(5,a), b:a.error ? `Rejected at <em>offset ${a.error.at}</em>.` : (syn ? `<em>${syn}</em> bytes parsed as syntax.` : `All bytes stayed data.`)},
-      {h:"L6 · Data",    state:st(6,a), b:a.error ? `Nothing executed.` : `<em>${rows}</em> ${rows===1?"row":"rows"} out${a.leaked.length?`, <strong>${a.leaked.length} credential</strong>`:""}.`}
+      {h:"L5 · Query",   state:st(5,a), b:a.error ? `Rejected at <em>offset ${a.error.at}</em>.` : (syn ? `<em>${syn}</em> ${plural(syn,"byte","bytes")} parsed as syntax.` : `All bytes stayed data.`)},
+      {h:"L6 · Data",    state:st(6,a), b:a.error ? `Nothing executed.` : `<em>${rows}</em> ${plural(rows,"row","rows")} out${a.leaked.length?`, <strong>${a.leaked.length} credential</strong>`:""}.`}
     ];
   },
   verdict(a){
     const unreleased = a.rows.filter(p => !p.released).length;
-    const sev = a.leaked.length ? ["Critical","bad"] : unreleased ? ["High","hot"] : a.error ? ["Info","hot"] : ["No finding","good"];
+    const sev = a.leaked.length ? ["Critical","bad"] : unreleased ? ["High","hot"] : a.error ? ["Info",""] : ["No finding","good"];
     return [ ["Status", a.error?"500":"200", a.error?"bad":""],
              ["Rows out", String(a.rows.length + a.leaked.length), a.leaked.length?"hot":""],
-             ["Withheld reached", String(unreleased + a.leaked.length), (unreleased+a.leaked.length)?"hot":""],
+             ["Withheld reached", String(unreleased), unreleased?"hot":""],
              ["Severity", sev[0], sev[1]] ];
   }
 };
@@ -1884,6 +1987,14 @@ const HOST = "shop.strata.lab";
    (invisible, exactly as they render), <img> becomes a broken-image glyph and
    never loads. Benign markup like <b> really renders; the alert() dialog is
    the visible effect of anything that executes. Nothing runs or fetches. */
+/* URL schemes survive attribute parsing with control characters intact
+   ("jav&#x09;ascript:") — a real browser strips them before deciding the
+   scheme, so the safety check must too. Only same-document or http(s)
+   survive out of an untrusted fragment. */
+function safeHref(h){
+  const clean = String(h).replace(/[\x00-\x20\x7f]/g, "");
+  return /^(?:javascript|data|vbscript|file):/i.test(clean) ? "#" : h;
+}
 const SAFE_TAGS = new Set(["B","I","U","EM","STRONG","SPAN","MARK","SMALL","CODE","BR","P","A","H2","H3","UL","OL","LI"]);
 function safeRenderRaw(frag){
   if (typeof DOMParser === "undefined") return esc(frag);
@@ -1898,7 +2009,7 @@ function safeRenderRaw(frag){
         if (!SAFE_TAGS.has(T)) return;              // script / svg / iframe / object → no visible box
         const t = T.toLowerCase();
         let attrs = "";
-        if (t === "a"){ let h = ch.getAttribute("href") || "#"; if (/^\s*javascript:/i.test(h)) h = "#"; attrs = ` href="${esc(h)}"`; }
+        if (t === "a"){ attrs = ` href="${esc(safeHref(ch.getAttribute("href") || "#"))}"`; }
         out += `<${t}${attrs}>${walk(ch)}</${t}>`;
       }
     });
@@ -2000,7 +2111,7 @@ const LAB_REFLECTED = {
         <p class="s-empty">We couldn’t find anything for that search. Browse our bestsellers instead:</p>
         <div class="s-grid">${PRODUCTS.slice(0, 4).map(productCard).join("")}</div>`;
       return `<div class="applayer">${siteFrame({ path, q: a.q, body })}
-        ${a.solved ? alertSim(HOST, a.q) : ""}</div>`;
+        ${alertOnce(a.solved, HOST, a.q)}</div>`;
     },
     1: a => `<pre class="src">${codeLines([
         {t:`<span class="cm">// analytics.js — the only script on this page</span>`},
@@ -2022,7 +2133,7 @@ const LAB_REFLECTED = {
         {t:`    q = request.args.get(<span class="str">"q"</span>, <span class="str">""</span>)`, hot:true},
         {t:`    <span class="cm"># reflected straight into HTML, unescaped:</span>`},
         {t:`    <span class="kw">return</span> <span class="kw">f</span><span class="str">"&lt;h1&gt;0 search results for '{</span>${taint("q")}<span class="str">}'&lt;/h1&gt;"</span>`, hot:true}
-      ])}${note("warn","Layer 4 · the bug", "The f-string pastes your bytes straight into the HTML, so they become part of the document’s <b>markup</b>, not its text. Autoescaping in a template — <code style='color:var(--ice)'>{{ q }}</code> — would render <code style='color:var(--ice)'>&lt;</code> as <code style='color:var(--ice)'>&amp;lt;</code> and close the hole.")}`,
+      ])}</pre>${note("warn","Layer 4 · the bug", "The f-string pastes your bytes straight into the HTML, so they become part of the document’s <b>markup</b>, not its text. Autoescaping in a template — <code style='color:var(--ice)'>{{ q }}</code> — would render <code style='color:var(--ice)'>&lt;</code> as <code style='color:var(--ice)'>&amp;lt;</code> and close the hole.")}`,
     5: a => `<pre class="src">${codeLines([
         {t:`<span class="kw">HTTP/1.1</span> <span class="num">200 OK</span>`},
         {t:`<span class="kw">Content-Type:</span> text/html; charset=utf-8`},
@@ -2032,9 +2143,9 @@ const LAB_REFLECTED = {
         ? "Your <code style=\"color:var(--taint)\">&lt;…&gt;</code> is sitting in the byte stream the browser is about to tokenize. The amber-solid runs are the parts that will be read as tags."
         : "Your input is plain text in the response — no angle brackets, nothing for the tokenizer to promote.")}`,
     6: a => intendedVsParsed(a.prefix, a.q, a.suffix)
-        + `<div style="margin-top:12px" class="callout" style="color:var(--dim)">RESULTING DOM</div>`
+        + `<div class="callout" style="margin-top:12px;color:var(--dim)">RESULTING DOM</div>`
         + buildDomTree(a.prefix + a.q + a.suffix, "h1")
-        + vectorList(a.vectors)
+        + vectorList(a.vectors, a.hasMarkup)
         + (a.solved
             ? note("warn","Execution · fired","A self-firing vector reached the parser and called alert(). Because this is server-reflected HTML parsed at load, even a bare <code style=\"color:var(--taint)\">&lt;script&gt;</code> runs.")
             : a.hasMarkup
@@ -2087,11 +2198,15 @@ const LAB_DOM = {
       reveal:"<img src=x onerror=alert(1)>" }
   ]},
   analyze(q){
-    const vectors = scanVectors(q, "innerHTML");
+    // the depicted source decodes the fragment before it reaches the sink —
+    // so the engine must too (malformed escapes stay raw)
+    let val = String(q);
+    try { val = decodeURIComponent(val); } catch(_){}
+    const vectors = scanVectors(val, "innerHTML");
     const fires = vectors.some(v => v.fires);
-    const hasMarkup = /<[a-z!/]/i.test(q);
-    const scriptOnly = hasMarkup && !fires && /<script/i.test(q);
-    return { q, mode:"innerHTML", vectors, fires, hasMarkup, scriptOnly, solved:fires,
+    const hasMarkup = /<[a-z!/]/i.test(val);
+    const scriptOnly = hasMarkup && !fires && /<script\b/i.test(val);
+    return { q, val, mode:"innerHTML", vectors, fires, hasMarkup, scriptOnly, solved:fires,
              prefix:"Recently viewed: ", suffix:"" };
   },
   solved: a => a.fires,
@@ -2113,9 +2228,9 @@ const LAB_DOM = {
           </div>
         </div>
         <div class="s-recent"><h2>Recently viewed</h2>
-          <div class="s-recentbody">${safeRender(a.q)}</div></div>`;
+          <div class="s-recentbody">${safeRender(a.val)}</div></div>`;
       return `<div class="applayer">${siteFrame({ path:"/product?id=2", editFrag:a.q, search:false, body })}
-        ${a.solved ? alertSim(HOST, a.q) : ""}</div>`;
+        ${alertOnce(a.solved, HOST, a.val)}</div>`;
     },
     1: a => `<pre class="src">${codeLines([
         {t:`<span class="cm">// recent.js — runs on every product page</span>`},
@@ -2140,16 +2255,16 @@ const LAB_DOM = {
         {t:`<span class="kw">def</span> product():`},
         {t:`    id = request.args.get(<span class="str">"id"</span>)`},
         {t:`    <span class="kw">return</span> render_template(<span class="str">"product.html"</span>, item=lookup(id))`}
-      ])}${note("","Layer 4 · the server is innocent","The handler returns a static product page and <b>never sees your bytes</b>. Patching the server does nothing — this class of bug is fixed only in the client.")}`,
+      ])}</pre>${note("","Layer 4 · the server is innocent","The handler returns a static product page and <b>never sees your bytes</b>. Patching the server does nothing — this class of bug is fixed only in the client.")}`,
     5: a => `<pre class="src">${codeLines([
         {t:`<span class="kw">HTTP/1.1</span> <span class="num">200 OK</span>`},
         {t:``},
         {t:`&lt;div id=<span class="str">"recent"</span>&gt;&lt;/div&gt;  <span class="cm">&lt;!-- empty; filled by JS --&gt;</span>`}
       ])}</pre>${note("","Layer 5 · identical every time","The response body is the same static HTML for every visitor. Your payload appears only <b>after</b> the browser runs recent.js and writes to the sink.")}`,
-    6: a => intendedVsParsed(a.prefix, a.q, a.suffix)
-        + `<div style="margin-top:12px" class="callout" style="color:var(--dim)">#recent SUBTREE (built by innerHTML)</div>`
-        + buildDomTree(`<div id="recent">${a.prefix}${a.q}</div>`, "#recent")
-        + vectorList(a.vectors)
+    6: a => intendedVsParsed(a.prefix, a.val, a.suffix)
+        + `<div class="callout" style="margin-top:12px;color:var(--dim)">#recent SUBTREE (built by innerHTML)</div>`
+        + buildDomTree(`<div id="recent">${a.prefix}${a.val}</div>`, "#recent")
+        + vectorList(a.vectors, a.hasMarkup)
         + (a.solved
             ? note("warn","Execution · fired","A self-firing handler ran the moment innerHTML built the element. No <script> needed — and none would have worked.")
             : a.scriptOnly
@@ -2229,7 +2344,7 @@ const LAB_WAF = {
           <div class="s-grid">${PRODUCTS.slice(0, 4).map(productCard).join("")}</div>`;
       }
       return `<div class="applayer">${siteFrame({ path, q: a.q, body })}
-        ${a.solved ? alertSim(HOST, a.q) : ""}</div>`;
+        ${alertOnce(a.solved, HOST, a.q)}</div>`;
     },
     1: a => note("","Layer 1 · client is a bystander","As in Lab 02, the reflection is server-side. Your job is to get a payload <b>past the edge</b> (L3) that still parses as a script once it reaches the browser (L6)."),
     2: a => { const encd = encodeURIComponent(a.q).replace(/%20/g,"+");
@@ -2256,7 +2371,7 @@ const LAB_WAF = {
         : `<pre class="src">${codeLines([
             {t:`    q = request.args.get(<span class="str">"q"</span>, <span class="str">""</span>)`, hot:true},
             {t:`    <span class="kw">return</span> <span class="kw">f</span><span class="str">"&lt;h1&gt;…for '{</span>${taint("q")}<span class="str">}'&lt;/h1&gt;"</span>`, hot:true}
-          ])}${note("warn","Layer 4 · same bug as Lab 02","The origin is just as vulnerable — it reflects your bytes unescaped. The WAF was the <b>only</b> thing standing in the way, and a blocklist is a fence with gaps.")}`,
+          ])}</pre>${note("warn","Layer 4 · same bug as Lab 02","The origin is just as vulnerable — it reflects your bytes unescaped. The WAF was the <b>only</b> thing standing in the way, and a blocklist is a fence with gaps.")}`,
     5: a => a.waf.blocked
         ? `<pre class="src">${codeLines([{t:`<span class="kw">HTTP/1.1</span> <span class="caret">403 Forbidden</span>`},{t:`<span class="kw">Server:</span> cloudfront`}])}</pre>${note("warn","Layer 5 · edge response","The body is the firewall’s block page, not the app’s HTML. Your payload never became part of a document.")}`
         : `<pre class="src">${codeLines([
@@ -2267,12 +2382,14 @@ const LAB_WAF = {
     6: a => {
       if (a.waf.blocked) return note("","Layer 6 · never parsed","The browser received a 403 page. There was nothing of yours to tokenize — the exploit died at the edge, one plane short of the parser.");
       return intendedVsParsed(a.prefix, a.q, a.suffix)
-        + `<div style="margin-top:12px" class="callout" style="color:var(--dim)">RESULTING DOM</div>`
+        + `<div class="callout" style="margin-top:12px;color:var(--dim)">RESULTING DOM</div>`
         + buildDomTree(a.prefix + a.q + a.suffix, "h1")
-        + vectorList(a.vectors)
+        + vectorList(a.vectors, a.hasMarkup)
         + (a.solved
             ? note("warn","Execution · bypass fired","<code style=\"color:var(--taint)\">onload</code> was never on the blocklist, and <code style=\"color:var(--taint)\">&lt;svg&gt;</code> is a perfectly good element to hang it on. The filter’s grammar and the parser’s grammar disagreed — that gap is the bypass.")
-            : note("","Execution · parsed, no auto-fire","It got past the WAF but doesn’t self-fire. Find a tag+handler the blocklist misses that still runs on load."));
+            : a.hasMarkup
+              ? note("","Execution · parsed, no auto-fire","It got past the WAF and parsed as markup, but nothing self-fires. Find a tag+handler the blocklist misses that still runs on load.")
+              : note("","Execution · text only","It slipped past the WAF as plain text — there was nothing for the tokenizer to promote."));
     }
   },
   trace(a){ const st = this.layerState.bind(this); const blk = a.waf.blocked;
@@ -2337,8 +2454,8 @@ const LAB_FOUNDATIONS = {
             <li><span class="t">&lt;<span class="n">header</span>&gt;</span> <span class="x">Aperture · search box · cart</span></li>
             <li><span class="t">&lt;<span class="n">main</span>&gt;</span><ul>
               <li><span class="t">&lt;<span class="n">h1</span>&gt;</span> <span class="x">“${esc(clip(a.q,18))}” results</span></li>
-              <li><span class="t">&lt;<span class="n">ul</span> <span class="a">class="s-grid"</span>&gt;</span><ul>
-                ${a.rows.slice(0,3).map(p => `<li><span class="t">&lt;<span class="n">li</span> <span class="a">class="s-card"</span>&gt;</span> <span class="x">${esc(clip(p.name,22))}</span></li>`).join("")}
+              <li><span class="t">&lt;<span class="n">div</span> <span class="a">class="s-grid"</span>&gt;</span><ul>
+                ${a.rows.slice(0,3).map(p => `<li><span class="t">&lt;<span class="n">div</span> <span class="a">class="s-card"</span>&gt;</span> <span class="x">${esc(clip(p.name,22))}</span></li>`).join("")}
                 ${a.rows.length>3?`<li><span class="x">… ${a.rows.length-3} more</span></li>`:""}
               </ul></li>
             </ul></li>
@@ -2475,7 +2592,8 @@ const LAB_IDOR = {
       reveal:"1000" }
   ]},
   analyze(q){
-    const id = parseInt(String(q).replace(/\D/g,""), 10);
+    const s = String(q).trim();
+    const id = /^\d+$/.test(s) ? parseInt(s, 10) : NaN;   // "-1000" and "1001.9" are not ids
     const acct = ACCOUNTS.find(a => a.id === id) || null;
     const yours = id === YOU_ID;
     return { id:String(q), reqId:id, acct, yours, solved: !!acct && !yours };
@@ -2520,7 +2638,7 @@ const LAB_IDOR = {
         {t:`    id = request.args.get(<span class="str">"id"</span>)`},
         {t:`    row = db.execute(<span class="str">"SELECT * FROM accounts WHERE id = ?"</span>, (id,))`, hot:true},
         {t:`    <span class="kw">return</span> jsonify(row)   <span class="cm"># …but never checks you OWN it</span>`, hot:true}
-      ])}${note("warn","Layer 4 · the bug is a missing line","<code>@login_required</code> confirms <em>authentication</em>. What’s absent is <em>authorization</em>: <code style='color:var(--ice)'>AND owner_id = session.user_id</code>. Without it, any logged-in user can read any row by guessing ids.")}`,
+      ])}</pre>${note("warn","Layer 4 · the bug is a missing line","<code>@login_required</code> confirms <em>authentication</em>. What’s absent is <em>authorization</em>: <code style='color:var(--ice)'>AND owner_id = session.user_id</code>. Without it, any logged-in user can read any row by guessing ids.")}`,
     5: a => explain("Authentication vs authorization",
         "Two different questions. <b>Authentication</b>: “are you logged in?” — yes. <b>Authorization</b>: “are you allowed to see <em>this</em> record?” — never asked. The whole bug lives in that missing check.")
       + kv([["Who you are", "account #" + YOU_ID + " (authenticated)", "ok"],
@@ -2608,6 +2726,7 @@ const LAB_CRYPTO = {
       let out;
       if (a.plain) out = `<div class="cracked">🔓 <b>${esc(a.hash)}</b> → <span class="plain">${esc(a.plain)}</span> — cracked instantly from a rainbow table.</div>`;
       else if (a.bcrypt) out = `<div class="ownerok">This one is bcrypt (salted, slow). A rainbow table can’t touch it — nothing to look up.</div>`;
+      else if (!a.hash) out = `<div class="s-empty">Paste a hash from the table — or type any word to see its md5.</div>`;
       else if (a.pwMode) out = `<div class="loginerr">You typed a word, not a hash. <b>${esc(a.pwMode)}</b> hashes to <span class="mono">${esc(a.myHash)}</span> — ${a.inList ? "<b>it's in the wordlist</b>, so it falls the moment the table leaks" : "not in this wordlist (a bigger one might still catch it)"}.</div>`;
       else out = `<div class="s-empty">Not in the wordlist — this md5 has no matching word. Paste one of the hashes below.</div>`;
       const body = `<h1 class="s-h">Password audit</h1>
@@ -2629,7 +2748,7 @@ const LAB_CRYPTO = {
         {t:`<span class="cm"># the fix:</span>`},
         {t:`<span class="kw">import</span> bcrypt`},
         {t:`bcrypt.hashpw(pw.encode(), bcrypt.gensalt())            <span class="cm"># ✓ salted + slow</span>`}
-      ])}${note("warn","Layer 4 · MD5 is the wrong tool","MD5 is a <em>fast, unsalted</em> hash. Fast means billions of guesses per second; unsalted means two users with the same password get the same hash — so a single precomputed table cracks everyone at once.")}`,
+      ])}</pre>${note("warn","Layer 4 · MD5 is the wrong tool","MD5 is a <em>fast, unsalted</em> hash. Fast means billions of guesses per second; unsalted means two users with the same password get the same hash — so a single precomputed table cracks everyone at once.")}`,
     5: a => explain("Why unsalted MD5 falls in milliseconds",
         "A <b>rainbow table</b> is a giant precomputed map of <em>hash → password</em> for common passwords. Because MD5 has no salt, the admin’s hash is identical to the hash of that same word anywhere on the internet — so it’s already in the table. A salt (a random per-user value mixed in before hashing) makes every hash unique and the precomputed table useless.")
       + kv([["Stolen hash", `<span class="mono">${esc(a.hash)}</span>`, ""],
@@ -2678,46 +2797,54 @@ const LAB_DESIGN = {
             {q:"0.00",label:"Free", spoiler:true},{q:"-100.00",label:"Get a refund", spoiler:true} ],
   wire:{ type:"json", path:"/checkout", param:"price" },
   challenge:{ steps:[
-    { id:"discount", label:"Buy it for less than list price", test:a => a.charged < BUY.listPrice && a.charged >= 0,
+    { id:"discount", label:"Buy it for less than list price", test:a => a.valid && a.charged < BUY.listPrice && a.charged >= 0,
       hints:["The price travels with YOUR request — look at L2.",
              "Nothing validates the number. Send a smaller one."],
       reveal:"1.00" },
-    { id:"refund", label:"Make the store pay YOU", test:a => a.charged < 0,
+    { id:"refund", label:"Make the store pay YOU", test:a => a.valid && a.charged < 0,
       hints:["The check you bypassed was a value check — but what about the sign?",
              "Negative numbers are perfectly valid JSON."],
       reveal:"-100.00" }
   ]},
   analyze(q){
-    const price = parseFloat(String(q).replace(/[^0-9.\-]/g,""));
-    const charged = isNaN(price) ? BUY.listPrice : price;
-    return { raw:String(q), charged, solved: charged < BUY.listPrice };
+    const raw = String(q).trim();
+    const n = Number(raw);
+    const valid = raw !== "" && isFinite(n);   // what the JSON body parser would accept
+    const charged = valid ? n : null;          // invalid → the API rejects the order
+    return { raw, valid, charged, solved: !!(valid && charged < BUY.listPrice) };
   },
   solved: a => a.solved,
   layerState(i, a){ return ["present","present","present","present","present", a.solved?"boundary":"present","present"][i]; },
   render:{
     0: a => {
-      const paid = a.charged;
-      const refund = paid < 0;
+      const refund = a.valid && a.charged < 0;
+      const receipt = a.valid
+        ? `<div class="receipt ${a.solved?"win":""}">
+            <div class="rrow"><span>Order total</span><b>$${a.charged.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</b></div>
+            <div class="rmsg">${refund ? "The store just <b>refunded you</b> $"+Math.abs(a.charged).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})+"." : a.solved ? "Order placed. You paid <b>$"+a.charged.toFixed(2)+"</b> for a $"+BUY.listPrice.toFixed(2)+" item." : "Order placed at the honest price."}</div>
+          </div>`
+        : `<div class="receipt">
+            <div class="rrow"><span>Order total</span><b>—</b></div>
+            <div class="rmsg"><b>400 Bad Request</b> — the server rejected the order: price must be a number. Garbage bytes never became a charge.</div>
+          </div>`;
       const body = `<h1 class="s-h">Checkout</h1>
         <div class="cartline"><div class="s-photo cartpic"></div>
-          <div><div class="s-name">${esc(BUY.name)}</div><div class="s-sub">list price $${BUY.listPrice.toLocaleString("en-US",{minimumFractionDigits:2})}</div></div></div>
+          <div><div class="s-name">${esc(BUY.name)}</div><div class="s-sub">list price $${BUY.listPrice.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div></div>
         ${field("Price ($)", a.raw, "Place order", "1140.00")}
-        <div class="receipt ${a.solved?"win":""}">
-          <div class="rrow"><span>Order total</span><b>$${paid.toLocaleString("en-US",{minimumFractionDigits:2})}</b></div>
-          <div class="rmsg">${refund ? "The store just <b>refunded you</b> $"+Math.abs(paid).toLocaleString("en-US",{minimumFractionDigits:2})+"." : a.solved ? "Order placed. You paid <b>$"+paid.toFixed(2)+"</b> for a $"+BUY.listPrice.toFixed(2)+" item." : "Order placed at the honest price."}</div>
-        </div>`;
+        ${receipt}`;
       return `<div class="applayer">${siteFrame({ path:"/checkout", search:false, body })}</div>`;
     },
-    1: a => explain("The price lives in the page",
-        "The checkout form carries the price as a hidden field the browser submits. Anything the browser sends, the attacker controls — a hidden field is not a lock.")
+    1: a => explain("The price travels with the browser",
+        "The checkout script reads the price it displayed and sends it in the request body. Anything the browser sends, the attacker controls — the number was never the server’s.")
       + `<pre class="src">${codeLines([
-          {t:`&lt;input type=<span class="str">"hidden"</span> name=<span class="str">"price"</span> value=<span class="str">"1140.00"</span>&gt;   <span class="cm">// editable by anyone</span>`, hot:true}
+          {t:`<span class="kw">const</span> body = JSON.stringify({ item: <span class="num">2</span>, price: pageTotal });`, hot:true},
+          {t:`<span class="kw">await</span> fetch(<span class="str">'/checkout'</span>, { method:<span class="str">'POST'</span>, body });   <span class="cm">// pageTotal is the client’s word</span>`}
         ])}</pre>`,
     2: a => `<pre class="src">${codeLines([
         {t:`<span class="kw">POST</span> /checkout <span class="kw">HTTP/1.1</span>`},
         {t:`<span class="kw">Content-Type:</span> application/json`},
         {t:``},
-        {t:`{ <span class="str">"item"</span>: 2, <span class="str">"price"</span>: ${taint(a.charged.toFixed(2))} }`, hot:true}
+        {t:`{ <span class="str">"item"</span>: 2, <span class="str">"price"</span>: ${taint(esc(JSON.stringify(a.valid ? a.charged : a.raw)))} }`, hot:true}
       ])}</pre>${note("","Layer 2 · you set the price","The browser tells the server what to charge. Intercept the request (or just edit the field) and the number is yours.")}`,
     3: a => note("","Layer 3 · looks like a normal order","A well-formed checkout for a real product. Nothing here reveals that the price is a lie."),
     4: a => `<pre class="src">${codeLines([
@@ -2728,28 +2855,33 @@ const LAB_DESIGN = {
         {t:``},
         {t:`    <span class="cm"># the fix — the server decides the price:</span>`},
         {t:`    price = db.price_of(request.json[<span class="str">"item"</span>])   <span class="cm"># ✓</span>`}
-      ])}${note("warn","Layer 4 · not a typo — a design choice","The code isn’t malformed; it was <em>designed</em> to trust the wrong side. Insecure design is a whole category of “we let the client decide something only the server should.” No amount of input-escaping fixes it — the value has to be looked up server-side.")}`,
+      ])}</pre>${note("warn","Layer 4 · not a typo — a design choice","The code isn’t malformed; it was <em>designed</em> to trust the wrong side. Insecure design is a whole category of “we let the client decide something only the server should.” No amount of input-escaping fixes it — the value has to be looked up server-side.")}`,
     5: a => explain("Who is allowed to decide?",
         "Price, discounts, your own user-id, whether you’re an admin — these are <b>server-authoritative</b> facts. The moment the client gets to state them, the feature is broken by design, however clean the code looks.")
       + kv([["Item", esc(BUY.name), ""],["Real price", "$"+BUY.listPrice.toFixed(2), ""],
-            ["Price you sent", "$"+a.charged.toFixed(2), a.solved?"leak":""],
-            ["Server charged", "$"+a.charged.toFixed(2), a.solved?"bad":""]]),
-    6: a => `<table class="db"><caption>orders</caption><tr><th>#</th><th>item</th><th>list</th><th>charged</th></tr>
+            ["Price you sent", esc(a.raw), a.solved?"leak":""],
+            ["Server charged", a.valid ? "$"+a.charged.toFixed(2) : "— rejected (400)", a.solved?"bad":""]]),
+    6: a => a.valid
+      ? `<table class="db"><caption>orders</caption><tr><th>#</th><th>item</th><th>list</th><th>charged</th></tr>
         <tr class="got"><td>7781</td><td>${esc(BUY.name)}</td><td>$${BUY.listPrice.toFixed(2)}</td><td>$${a.charged.toFixed(2)}</td></tr></table>`
+      : `<table class="db"><caption>orders</caption><tr><th>#</th><th>item</th><th>list</th><th>charged</th></tr>
+        <tr class="locked"><td colspan="4">no row — the order never landed (400)</td></tr></table>`
       + note(a.solved?"warn":"","Layer 6 · the ledger believes you", a.solved?`The order is recorded at <b>$${a.charged.toFixed(2)}</b>. Fulfilment ships a real product; finance reconciles a fantasy.`:`Recorded at the honest price.`)
   },
   trace(a){ const S=i=>this.layerState(i,a);
-    return [ {h:"L0 · Surface",state:S(0),b:`You set the price to <em>$${a.charged.toFixed(2)}</em>.`},
-      {h:"L1 · Client",state:S(1),b:`Price is a form field.`},
+    const fmt = a.valid ? "$"+a.charged.toFixed(2) : "garbage (400)";
+    return [ {h:"L0 · Surface",state:S(0),b:`You set the price to <em>${esc(a.raw)}</em>.`},
+      {h:"L1 · Client",state:S(1),b:`Price is the client’s word.`},
       {h:"L2 · Request",state:S(2),b:`Sent to the server.`},
       {h:"L3 · Edge",state:S(3),b:`Looks like a normal order.`},
-      {h:"L4 · Server",state:S(4),b:`Charges the client’s number.`},
+      {h:"L4 · Server",state:S(4),b:a.valid?`Charges the client’s number.`:`Rejects it — not a number.`},
       {h:"L5 · Design",state:S(5),b:a.solved?`<strong>Client decided a server fact.</strong>`:`Honest price.`},
-      {h:"L6 · Data",state:S(6),b:`Order booked at $${a.charged.toFixed(2)}.`} ];
+      {h:"L6 · Data",state:S(6),b:a.valid?`Order booked at ${fmt}.`:`No order recorded.`} ];
   },
   verdict(a){
-    return [ ["List price", "$"+BUY.listPrice.toFixed(2), ""],["Charged", "$"+a.charged.toFixed(2), a.solved?"bad":""],
-      ["Loss", a.charged<BUY.listPrice?"$"+(BUY.listPrice-a.charged).toFixed(2):"$0.00", a.solved?"bad":""],
+    return [ ["List price", "$"+BUY.listPrice.toFixed(2), ""],
+      ["Charged", a.valid ? "$"+a.charged.toFixed(2) : "— (400)", a.solved?"bad":""],
+      ["Loss", a.valid && a.charged<BUY.listPrice ? "$"+(BUY.listPrice-a.charged).toFixed(2) : "$0.00", a.solved?"bad":""],
       ["Lab", a.solved?"Solved":"Not solved", a.solved?"good":""] ];
   }
 };
@@ -2798,7 +2930,7 @@ const LAB_MISCONFIG = {
              "A database backup is one URL away — what would it be called?"],
       reveal:"/backup.sql" },
     { id:"env", label:"Read the live secrets", test:a => a.file?.kind === "secrets",
-      hints:["Twelve little letters, one leading dot.",
+      hints:["Three little letters, one leading dot.",
              "The config file every framework reads: /.env"],
       reveal:"/.env" },
     { id:"traverse", label:"Reach .env through a traversal", test:a => a.file?.kind === "secrets" && a.traversed,
@@ -2808,9 +2940,13 @@ const LAB_MISCONFIG = {
   ]},
   analyze(q){
     const raw = String(q).trim() || "/";
-    const path = normalizePath(raw);
-    const file = SERVED[path] || null;
-    return { raw, path, traversed: path !== raw.split("?")[0], file, solved: !!file };
+    let decoded = raw;
+    try { decoded = decodeURIComponent(raw); } catch(_){ /* malformed escapes stay raw */ }
+    const stripped = decoded.split("?")[0];
+    const trailing = stripped !== "/" && /\/$/.test(stripped);   // /.env/ is not a file request
+    const path = normalizePath(stripped);
+    const file = (!trailing && SERVED[path]) || null;
+    return { raw, path, traversed: path !== stripped, file, solved: !!file };
   },
   solved: a => a.solved,
   layerState(i, a){ return ["present","present","present", a.solved?"boundary":"present","present","present", a.solved?"present":"present"][i]; },
@@ -2840,13 +2976,13 @@ const LAB_MISCONFIG = {
         {t:`    root /var/www/shop;      <span class="cm"># the whole project dir…</span>`, hot:true},
         {t:`    autoindex on;            <span class="cm"># …with directory listing on</span>`, hot:true},
         {t:`}`}
-      ])}${note("warn","Layer 3 · the web root is the project root","Serving the entire application directory means every file beside your code — secrets, backups, the <code>.git</code> folder — is one URL away. The fix is a deny rule for dotfiles/backups and a web root that contains only public assets.")}`,
+      ])}</pre>${note("warn","Layer 3 · the web root is the project root","Serving the entire application directory means every file beside your code — secrets, backups, the <code>.git</code> folder — is one URL away. The fix is a deny rule for dotfiles/backups and a web root that contains only public assets.")}`,
     4: a => `<pre class="src">${codeLines([
         {t:`<span class="cm"># app config shipped to production</span>`},
         {t:`DEBUG = <span class="kw">True</span>                 <span class="cm"># ✗ verbose errors leak internals</span>`},
         {t:`SEND_FILE_MAX_AGE = 0`},
         {t:`app.static_folder = <span class="str">"."</span>       <span class="cm"># ✗ serves cwd, dotfiles and all</span>`, hot:true}
-      ])}${note("warn","Layer 4 · dev settings in prod","Security misconfiguration is rarely one dramatic hole — it’s defaults left on: debug mode, sample accounts, permissive CORS, an admin console with no password. Each is a door someone forgot to lock.")}`,
+      ])}</pre>${note("warn","Layer 4 · dev settings in prod","Security misconfiguration is rarely one dramatic hole — it’s defaults left on: debug mode, sample accounts, permissive CORS, an admin console with no password. Each is a door someone forgot to lock.")}`,
     5: a => explain("One flag, whole classes of leak",
         "Misconfiguration is the category of “it works, so we shipped it.” The app runs fine with <code>DEBUG=True</code> and a wide-open web root — nothing breaks in testing. What breaks is confidentiality, quietly, the first time someone guesses <code>/.env</code>.")
       + kv([["Requested", esc(a.raw), ""],
@@ -2858,7 +2994,9 @@ const LAB_MISCONFIG = {
           ? note("warn","Layer 6 · these are live secrets","The database password, the app’s <code>SECRET_KEY</code> (forge any session), and cloud keys — all in one download. This single file is often the whole breach.")
           : a.file.kind === "dump"
             ? note("warn","Layer 6 · the database, as a file","A full dump means every user and password hash — feed it straight into the Cryptographic-Failures lab.")
-            : note("warn","Layer 6 · your source, and a CI token","The <code>.git</code> folder rebuilds your entire source history, and that remote URL carries a credential.") )
+            : a.path === "/.git/HEAD"
+              ? note("warn","Layer 6 · the first step of rebuilding your source","HEAD alone looks harmless — but it proves the <code>.git</code> directory is served. Clone it, and the entire history — every version of every secret — is yours.")
+              : note("warn","Layer 6 · your source, and a CI token","The <code>.git</code> folder rebuilds your entire source history, and that remote URL carries a credential.") )
       : note("","Layer 6 · nothing here","This path isn’t served. Think about what files sit beside the code in a project directory — and what they’d be named.")
   },
   trace(a){ const S=i=>this.layerState(i,a);
@@ -2880,7 +3018,7 @@ const LAB_MISCONFIG = {
 /* ── A06 · VULNERABLE & OUTDATED COMPONENTS (old markdown lib) ───────── */
 const DEPS = [
   {name:"flask", ver:"3.0.2", latest:"3.0.2", vuln:false},
-  {name:"marked", ver:"0.3.6", latest:"12.0.0", vuln:true, adv:"GHSA · marked <0.3.9 renders raw HTML with no sanitization → stored XSS"},
+  {name:"marked", ver:"0.3.6", latest:"12.0.0", vuln:true, adv:"known-unsafe with untrusted input · renders raw HTML with no built-in sanitization → stored XSS"},
   {name:"requests", ver:"2.31.0", latest:"2.32.3", vuln:false},
   {name:"jinja2", ver:"3.1.3", latest:"3.1.4", vuln:false}
 ];
@@ -2927,7 +3065,7 @@ const LAB_COMPONENTS = {
         <div class="biopreview"><div class="callout" style="color:var(--s-muted);margin-bottom:6px">PUBLIC PREVIEW</div>
           <div class="s-recentbody">${safeRender(mdToHtml(a.md))}</div></div>`;
       return `<div class="applayer">${siteFrame({ path:"/profile/edit", search:false, body })}
-        ${a.solved ? alertSim("shop.aperture.lab", a.md) : ""}</div>`;
+        ${alertOnce(a.solved, "shop.aperture.lab", a.md)}</div>`;
     },
     1: a => explain("The library does the dangerous part",
         "Your own code just calls <code>marked(bio)</code> to turn markdown into HTML, then drops it into the page. You didn’t write anything unsafe — but the <em>version</em> of marked you’re using passes raw HTML straight through.")
@@ -2943,13 +3081,13 @@ const LAB_COMPONENTS = {
     3: a => note("","Layer 3 · a WAF might not help","Markdown payloads often slip past filters because they don’t look like HTML until the library expands them. The real fix is upstream: the dependency."),
     4: a => note("","Layer 4 · your server just stores it","The bio is saved verbatim and rendered on view. The vulnerability isn’t in your route — it’s in a package your route imports."),
     5: a => explain("The bug has a version number",
-        "This whole category is “software you didn’t write, shipped with a flaw someone already found and published.” The fix usually isn’t clever code — it’s <code>npm update</code>. But you can only patch what you know you have, which is why a dependency inventory (an SBOM) matters.")
+        "This whole category is “software you didn’t write, shipped with a flaw someone already found and published.” The fix is a dependency decision — upgrade, and sanitize what it emits (or switch inline HTML off). But you can only patch what you know you have, which is why a dependency inventory (an SBOM) matters.")
       + `<div class="depscan"><div class="rulehdr">dependency scan · npm audit</div>${DEPS.map(d => `<div class="dep ${d.vuln?"bad":"ok"}">
           <span class="dn">${esc(d.name)}</span><span class="dv">${esc(d.ver)}</span>
           <span class="dadv">${d.vuln?esc(d.adv):"up to date · "+esc(d.latest)}</span>
           <span class="dstat">${d.vuln?"vulnerable":"ok"}</span></div>`).join("")}</div>`,
     6: a => explain("The advisory & the fix",
-        "<b>marked &lt; 0.3.9</b> renders embedded HTML with no sanitization, so any user-supplied HTML (an <code>&lt;img onerror&gt;</code>, a <code>javascript:</code> link) becomes live markup — a stored XSS that fires for every visitor. <b>Fix:</b> upgrade to a current marked, which escapes HTML by default.")
+        "<b>marked &lt; 0.3.9</b> passes embedded HTML through unchanged — so any user-supplied markup (an <code>&lt;img onerror&gt;</code>, a <code>javascript:</code> link) becomes live markup in every visitor’s page: a stored XSS. <b>Fix:</b> sanitize the output (e.g. DOMPurify) or disable inline HTML. Note that marked passes raw HTML through in <b>every</b> version — updating the package alone does not close this; the sanitization step is the control.")
       + (a.solved
           ? note("warn","Result · it fired","Your payload survived the outdated renderer and executed. Every visitor to your profile would have run it too.")
           : a.hasHtml ? note("","Result · rendered, inert","Markup came through but nothing self-fires. Try <code>&lt;img src=x onerror=alert(1)&gt;</code>.")
@@ -2977,6 +3115,12 @@ const LAB_COMPONENTS = {
 const CREDS = { "admin@aperture.lab":"password", "r.okafor@aperture.lab":"abc123", "j.lindqvist@aperture.lab":"12345678" };
 const COMMON_PW = ["123456","password","qwerty","letmein","admin","welcome","abc123","iloveyou"];
 const AUTH_LOG = { attempts: [], total: 0 };   // session-scoped, like a real log
+/* credentials are "email : password" — split at the FIRST colon so
+   passwords containing colons survive */
+function splitCreds(s){
+  const str = String(s), i = str.indexOf(":");
+  return i === -1 ? [str.trim(), ""] : [str.slice(0, i).trim(), str.slice(i + 1).trim()];
+}
 const LAB_AUTH = {
   id:"auth", code:"A07", cat:"Authentication Failures", title:"Username enumeration + no rate limit",
   difficulty:"Practitioner",
@@ -3007,25 +3151,28 @@ const LAB_AUTH = {
       reveal:"admin@aperture.lab : *bruteforce*" }
   ]},
   analyze(q){
-    const s = String(q);
-    const [emailRaw, pwRaw=""] = s.split(":");
-    const email = emailRaw.trim(), pw = pwRaw.trim();
+    const [email, pw] = splitCreds(q);
     const exists = Object.prototype.hasOwnProperty.call(CREDS, email);
     let brute = null, pwUsed = pw, ok;
     if (pw === "*bruteforce*" && exists){
-      const found = COMMON_PW.find(c => c === CREDS[email]);
-      brute = { tries: COMMON_PW.indexOf(CREDS[email]) + 1, found: found || null };
+      const found = COMMON_PW.find(c => c === CREDS[email]) || null;
+      brute = { tries: found ? COMMON_PW.indexOf(found) + 1 : COMMON_PW.length, found };
       pwUsed = found || pw; ok = !!found;
     } else {
       ok = exists && CREDS[email] === pw;
-      AUTH_LOG.attempts.push({ email, pw, ok });
-      if (AUTH_LOG.attempts.length > 200) AUTH_LOG.attempts.shift();
-      AUTH_LOG.total++;
     }
     const admin = ok && email === "admin@aperture.lab";
     let err = null;
     if (!ok) err = exists ? "Incorrect password." : "No account with that email.";
     return { email, pw:pwUsed, exists, ok, admin, err, brute, solved: admin };
+  },
+  /* analyze stays pure — an attempt is a FIRE (Enter / preset / intercept),
+     never a keystroke. The shell calls this from run(). */
+  onFire(a){
+    if (a.brute) return;
+    AUTH_LOG.attempts.push({ email: a.email, pw: a.pw, ok: a.ok });
+    if (AUTH_LOG.attempts.length > 200) AUTH_LOG.attempts.shift();
+    AUTH_LOG.total++;
   },
   solved: a => a.solved,
   layerState(i, a){ return ["present","present","present", a.solved?"boundary":"present","present","present","present"][i]; },
@@ -3039,7 +3186,9 @@ const LAB_AUTH = {
         ${AUTH_LOG.total>4?`<div class="att">… ${AUTH_LOG.total-4} more</div>`:""}</div>` : "";
       const brute = a.brute ? `<div class="attempts"><div class="rulehdr">brute force · common-password list</div>
         ${COMMON_PW.map((c,i)=>`<div class="att ${a.brute.found===c?"hit":(i<a.brute.tries?"miss":"")}">${String(i+1).padStart(3,"0")} · ${esc(c)} ${a.brute.found===c?"→ ✓ match":(i<a.brute.tries?"→ ✗":"")}</div>`).join("")}
-        </div><div class="ownerbad" style="margin-top:8px">${a.brute.tries} guesses, no lockout, password found. A real list is millions long.</div>` : "";
+        </div><div class="ownerbad" style="margin-top:8px">${a.brute.found
+          ? `${a.brute.tries} guesses, no lockout — password found. A real list is millions long.`
+          : `${COMMON_PW.length} guesses, no lockout — the password is NOT in this list. A real list is millions long.`}</div>` : "";
       const body = `<h1 class="s-h">Sign in</h1>
         <p class="s-sub">enter as <code>email : password</code></p>
         ${field("Credentials", a.email + " : " + (a.pw==="*bruteforce*"?"*bruteforce*":a.pw), "Log in", "email : password")}
@@ -3057,7 +3206,7 @@ const LAB_AUTH = {
         {t:`<span class="cm"># rate limiting on /login</span>`},
         {t:`<span class="cm"># TODO: add throttling / lockout</span>`, hot:true},
         {t:`<span class="cm"># (none configured)</span>`}
-      ])}${note("warn","Layer 3 · no brakes",`With no rate limit, lockout, or CAPTCHA, an attacker can try every password in a leaked list. <b>${AUTH_LOG.total} attempt${AUTH_LOG.total===1?"":"s"} reached this login this session — all of them answered, none throttled.</b> Even a decent password falls to unlimited guesses; the control that matters here is <em>throttling</em>, not complexity.`)}`,
+      ])}</pre>${note("warn","Layer 3 · no brakes",`With no rate limit, lockout, or CAPTCHA, an attacker can try every password in a leaked list. <b>${AUTH_LOG.total} attempt${AUTH_LOG.total===1?"":"s"} reached this login this session — all of them answered, none throttled.</b> Even a decent password falls to unlimited guesses; the control that matters here is <em>throttling</em>, not complexity.`)}`,
     4: a => `<pre class="src">${codeLines([
         {t:`<span class="kw">def</span> login(email, pw):`},
         {t:`    user = db.find(email)`},
@@ -3066,7 +3215,7 @@ const LAB_AUTH = {
         {t:`    <span class="kw">if</span> user.pw != pw:`},
         {t:`        <span class="kw">return</span> <span class="str">"Incorrect password"</span>         <span class="cm"># ✗ confirms the email IS valid</span>`, hot:true},
         {t:`    <span class="cm"># fix: one generic "invalid email or password" for both</span>`}
-      ])}${note("warn","Layer 4 · two different errors = a yes/no oracle","Because a wrong password reads differently from an unknown email, an attacker can harvest valid accounts first, then aim the brute-force only at real ones.")}`,
+      ])}</pre>${note("warn","Layer 4 · two different errors = a yes/no oracle","Because a wrong password reads differently from an unknown email, an attacker can harvest valid accounts first, then aim the brute-force only at real ones.")}`,
     5: a => explain("Enumeration, then guessing",
         "Authentication failures are rarely one bug: a login that <b>enumerates</b> users (distinct errors, timing, or reset messages) plus <b>no throttling</b> plus users who pick weak passwords equals account takeover. Each alone is survivable; together they’re a doorway.")
       + kv([["Email", esc(a.email), ""],["Exists?", a.exists?"<b style='color:var(--breach)'>yes (leaked)</b>":"no", a.exists?"bad":""],
@@ -3160,7 +3309,7 @@ const LAB_JWT = {
           {t:`  <span class="str">${esc(clip(a.token,52))}</span>`, hot:true}
         ])}</pre>`,
     2: a => `<pre class="src">${codeLines([
-        {t:`<span class="kw">GET</span> /admin <span class="kw">HTTP/1.1</span>`},
+        {t:`<span class="kw">GET</span> /account <span class="kw">HTTP/1.1</span>`},
         {t:`<span class="kw">Authorization:</span> Bearer ${taint(esc(clip(a.token,40)))}`, hot:true}
       ])}</pre>${note("","Layer 2 · you present the token you edited","The server will read the role claim straight out of this. Everything rides on whether it verifies the signature first.")}`,
     3: a => note("","Layer 3 · a valid-looking token","Structurally it’s a perfect JWT. Only a signature check — which happens in the app — can tell a forged one from a real one."),
@@ -3171,7 +3320,7 @@ const LAB_JWT = {
         {t:``},
         {t:`<span class="cm"># fix — verify the signature with the secret, reject alg:none:</span>`},
         {t:`jwt.decode(token, SECRET, algorithms=[<span class="str">"HS256"</span>])   <span class="cm"># ✓</span>`}
-      ])}${note("warn","Layer 4 · it decodes but never verifies","<code>verify_signature: False</code> (or accepting <code>alg:none</code>) means the server reads your claims as gospel. Since you can write any payload, you can hand yourself any role. Integrity failures are exactly this: trusting data (or code, or updates) whose authenticity was never checked.")}`,
+      ])}</pre>${note("warn","Layer 4 · it decodes but never verifies","<code>verify_signature: False</code> (or accepting <code>alg:none</code>) means the server reads your claims as gospel. Since you can write any payload, you can hand yourself any role. Integrity failures are exactly this: trusting data (or code, or updates) whose authenticity was never checked.")}`,
     5: a => explain("Signed vs merely decoded",
         "The signature is the whole point of a JWT — it proves the <em>server</em> minted these claims. <b>Decoding</b> just base64-unpacks them; <b>verifying</b> re-computes the signature with the secret and rejects anything that doesn’t match. Skip verification and the token is a form the attacker fills in.")
       + kv([["Algorithm", a.header.alg, "bad"],["Signature", "not present", "bad"],
@@ -3235,10 +3384,12 @@ const LAB_LOGGING = {
       reveal:"account takeover" }
   ]},
   analyze(q){
-    const key = SCENARIOS[String(q)] ? String(q) : "account takeover";
+    const raw = String(q).trim();
+    const known = Object.prototype.hasOwnProperty.call(SCENARIOS, raw);
+    const key = known ? raw : "normal";   // unknown input replays a quiet window — never the attack
     const s = SCENARIOS[key];
     const logged = s.takeover ? 1 : 0;   // only the final 200 gets logged; failures dropped
-    return { key, s, logged, alerts:0, solved: s.takeover };
+    return { raw, key, unknown: raw !== "" && !known, s, logged, alerts:0, solved: s.takeover };
   },
   solved: a => a.solved,
   tour:false,
@@ -3248,7 +3399,8 @@ const LAB_LOGGING = {
       const s = a.s;
       const body = `<h1 class="s-h">Security dashboard</h1>
         <p class="s-sub">what the blue team sees while the attack runs</p>
-        ${field("Scenario", a.key, "Replay", "account takeover")}
+        ${field("Scenario", a.raw, "Replay", "account takeover")}
+        ${a.unknown ? `<div class="loginerr" style="margin-top:8px">No scenario called “${esc(a.raw)}” — replaying a quiet window instead. Use one of the four keys below.</div>` : ""}
         <div class="socgrid">
           <div class="soctile"><div class="soch">Requests seen</div><div class="socn">${s.reqs.toLocaleString()}</div></div>
           <div class="soctile"><div class="soch">Auth failures</div><div class="socn">${s.fails.toLocaleString()}</div></div>
@@ -3273,7 +3425,7 @@ const LAB_LOGGING = {
         {t:`log_format minimal '$remote_addr $status';`},
         {t:`map $status $loggable { 401 0; default 1; }   <span class="cm"># ✗ failures discarded</span>`, hot:true},
         {t:`access_log /var/log/access.log if=$loggable;`}
-      ])}${note("warn","Layer 3 · the evidence is thrown away at the door","Someone silenced 401s to keep logs tidy. That single line erased the entire brute-force from history.")}`,
+      ])}</pre>${note("warn","Layer 3 · the evidence is thrown away at the door","Someone silenced 401s to keep logs tidy. That single line erased the entire brute-force from history.")}`,
     4: a => `<pre class="src">${codeLines([
         {t:`<span class="kw">import</span> logging`},
         {t:`logging.basicConfig(level=logging.<span class="str">ERROR</span>)   <span class="cm"># ✗ warnings/failures ignored</span>`, hot:true},
@@ -3281,7 +3433,7 @@ const LAB_LOGGING = {
         {t:`<span class="kw">def</span> login(...):`},
         {t:`    <span class="kw">if</span> ok: log.info(<span class="str">"login ok"</span>)     <span class="cm"># successes only, no IP/user</span>`, hot:true},
         {t:`    <span class="cm"># failures: nothing logged at all</span>`}
-      ])}${note("warn","Layer 4 · you can’t investigate what you didn’t record","Logging only successes, at ERROR level, with no source IP or user, means there is nothing to reconstruct the attack from. Good logging records auth <em>failures</em> with who/where/when — and ships them somewhere tamper-resistant.")}`,
+      ])}</pre>${note("warn","Layer 4 · you can’t investigate what you didn’t record","Logging only successes, at ERROR level, with no source IP or user, means there is nothing to reconstruct the attack from. Good logging records auth <em>failures</em> with who/where/when — and ships them somewhere tamper-resistant.")}`,
     5: a => explain("Detection is a control too",
         "This category isn’t about stopping the breach — it’s about <b>noticing</b> it. No alert on N failures, no alert on a login from a new country, no alert on a bulk export. Mean-time-to-detect goes from minutes to <em>never</em>. The attack succeeds twice: once technically, once by staying invisible.")
       + kv([["Requests", a.s.reqs.toLocaleString(), ""],["Auth failures", a.s.fails.toLocaleString(), a.s.fails?"bad":""],
@@ -3345,6 +3497,8 @@ function classifyHost(raw){
   if (h.includes(":")){                                   // IPv6 forms
     const m4 = /::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(h);
     if (m4) return classifyHost(m4[1]);                   // ::ffff:169.254.169.254
+    const mh = /::ffff:([0-9a-f]{8})$/i.exec(h);
+    if (mh) return classifyHost(u32ToDotted(parseInt(mh[1], 16) >>> 0));   // ::ffff:a9fea9fe
     if (h === "::1") return { kind:"loopback", ip:"127.0.0.1" };
     return { kind:"private", ip:h };                      // conservative: treat literal v6 as internal
   }
@@ -3371,9 +3525,16 @@ const INTERNAL = {
   private: {label:"internal service", body:`Connection accepted from an internal-only address.\n(service unidentified — but from here you can map the rest of the network)`}
 };
 function hostOf(url){
-  // bracket-aware: IPv6 literals like [::ffff:169.254.169.254] must survive whole
-  const m = /^\s*[a-z]+:\/\/(\[[^\]]*\]|[^\/:?#]+)/i.exec(url);
-  return m ? m[1].toLowerCase() : null;
+  // authority-aware: userinfo is stripped at the LAST "@" (user@169.254.169.254
+  // is still the metadata service — the classic string-blocklist bypass),
+  // then the port; bracketed IPv6 literals survive whole.
+  const m = /^\s*[a-z]+:\/\/([^\/?#]+)/i.exec(url);
+  if (!m) return null;
+  let auth = m[1];
+  const at = auth.lastIndexOf("@");
+  if (at >= 0) auth = auth.slice(at + 1);
+  const hm = /^(\[[^\]]*\]|[^:]+)/.exec(auth);
+  return (hm ? hm[1] : auth).toLowerCase();
 }
 const LAB_SSRF = {
   id:"ssrf", code:"A10", cat:"Server-Side Request Forgery", title:"“Import image from URL” fetches anything",
@@ -3390,7 +3551,8 @@ const LAB_SSRF = {
             {q:"http://127.0.0.1/admin",label:"localhost admin"},
             {q:"http://10.0.0.5:6379/",label:"Internal Redis"},
             {q:"http://169.254.169.254/latest/meta-data/iam/security-credentials/",label:"Cloud metadata", spoiler:true},
-            {q:"http://2852039166/latest/meta-data/iam/security-credentials/",label:"Bypass · decimal IP", spoiler:true} ],
+            {q:"http://2852039166/latest/meta-data/iam/security-credentials/",label:"Bypass · decimal IP", spoiler:true},
+            {q:"http://evil.example@169.254.169.254/latest/meta-data/iam/security-credentials/",label:"Bypass · userinfo", spoiler:true} ],
   challenge:{ steps:[
     { id:"inside", label:"Reach a host the internet can’t", test:a => !!a.internal,
       hints:["The SERVER does the fetching — it can knock on doors your browser can’t.",
@@ -3415,7 +3577,12 @@ const LAB_SSRF = {
     else if (cls.kind === "private") internal = INTERNAL[cls.ip] || INTERNAL.private;
     const external = !!host && !internal;
     const canonical = cls.ip || null;
-    const altForm = !!internal && !!canonical && host !== canonical && host !== "localhost";
+    // "disguised" means a NUMERIC spelling that isn't the canonical dotted
+    // form (decimal, hex, octal, short, IPv6-mapped) — hostnames and trailing
+    // dots are aliases, not IP disguises
+    const bare = host ? host.replace(/^\[|\]$/g, "") : "";   // brackets off, trailing dot stays: an alias is not a disguise
+    const numericHost = !!host && (bare.includes(":") || parseIPv4(bare) !== null);
+    const altForm = !!(internal && internal.creds && canonical && host !== canonical && numericHost);
     return { url, host, internal, external, canonical, altForm, solved: !!(internal && internal.creds) };
   },
   solved: a => a.solved,
@@ -3449,12 +3616,12 @@ const LAB_SSRF = {
         {t:`    <span class="kw">return</span> store(img)`},
         {t:``},
         {t:`    <span class="cm"># fix: allowlist hosts; block 127/10/169.254/… ranges</span>`}
-      ])}${note("warn","Layer 4 · the server is a confused deputy","<code>requests.get(url)</code> will fetch localhost, private ranges, or the cloud metadata IP just as happily as a CDN. The server has network access and internal trust the attacker lacks — SSRF borrows both.")}`,
+      ])}</pre>${note("warn","Layer 4 · the server is a confused deputy","<code>requests.get(url)</code> will fetch localhost, private ranges, or the cloud metadata IP just as happily as a CDN. The server has network access and internal trust the attacker lacks — SSRF borrows both.")}`,
     5: a => explain("Reaching what the internet can’t",
-        "From inside the VPC, <code>169.254.169.254</code> is the cloud’s <b>metadata service</b> — it hands running instances their temporary IAM credentials with no authentication. Unreachable from the internet, trivially reachable from a server that fetches attacker-supplied URLs. That one hop turns “fetch an image” into “assume the app’s cloud role.” And note the resolver below: it canonicalizes <em>every</em> spelling of an address before deciding — decimal, hex, octal-dropped, IPv6-mapped — which is why blocking one string stops nothing.")
+        "From inside the VPC, <code>169.254.169.254</code> is the cloud’s <b>metadata service</b> — it hands running instances their temporary IAM credentials with no authentication. Unreachable from the internet, trivially reachable from a server that fetches attacker-supplied URLs. That one hop turns “fetch an image” into “assume the app’s cloud role.” And note the resolver below: it strips <em>userinfo</em> (<code>user@…</code>), the port, and canonicalizes <em>every</em> spelling of an address — decimal, hex, octal-dropped, IPv6-mapped — before deciding, which is why blocking one string stops nothing.")
       + kv([["You asked for", esc(clip(a.url, 40)), ""],
-            ["Host as typed", a.host || "—", a.internal ? "leak" : ""],
-            ...(a.canonical && a.canonical !== a.host ? [["Canonical address", a.canonical, "bad"]] : []),
+            ["Host as typed", a.host ? esc(a.host) : "—", a.internal ? "leak" : ""],
+            ...(a.canonical && a.canonical !== a.host ? [["Canonical address", esc(a.canonical), "bad"]] : []),
             ["Reachable from internet?", a.internal ? "<b style='color:var(--breach)'>no — internal only</b>" : "yes", a.internal ? "bad" : ""],
             ["Server fetched it?", a.host ? "yes" : "no", a.internal ? "bad" : ""]]),
     6: a => a.internal
@@ -3492,6 +3659,9 @@ const LABS = [LAB_FOUNDATIONS,
   LAB_IDOR, LAB_CRYPTO,
   LAB_SQLI, LAB_REFLECTED, LAB_DOM, LAB_WAF,
   LAB_DESIGN, LAB_MISCONFIG, LAB_COMPONENTS, LAB_AUTH, LAB_JWT, LAB_LOGGING, LAB_SSRF];
+/* the frozen ids of the shipped labs — external files may replace their own
+   kind (iterate on a reload), never the built-ins */
+const BUILTIN_IDS = new Set(LABS.map(l => l.id));
 
 /* Catalog copy + the per-lab "signature" strip: which layers matter, previewed
    on each card. a=your input active · x=the weak spot · d=absent · s=safe. */
@@ -3540,10 +3710,13 @@ function validateLab(L, opts = {}){
   need(L && typeof L === "object" && !Array.isArray(L), "lab must be an object");
   if (!L || typeof L !== "object") return { ok:false, errs };
   need(typeof L.id === "string" && /^[a-z0-9][a-z0-9-]{1,31}$/.test(L.id), "id: lowercase slug (letters/digits/dashes), 2–32 chars");
+  need(!["constructor", "prototype", "__proto__", "hasOwnProperty"].includes(L.id), 'id: reserved — pick another slug');
   if (typeof L.id === "string" && !opts.allowReplace)
     need(!LABS.some(x => x.id === L.id), `id: "${L.id}" already exists (reloading a lab replaces it — this error means validation ran outside registerLab)`);
-  for (const f of ["code", "title", "cat", "difficulty"])
+  for (const f of ["code", "title", "cat"])
     need(typeof L[f] === "string" && L[f].length, `${f}: required non-empty string`);
+  need(["Beginner", "Apprentice", "Practitioner"].includes(L.difficulty),
+    'difficulty: one of "Beginner" | "Apprentice" | "Practitioner"');
   need(typeof L.goal === "string" && L.goal.length, "goal: required string (HTML allowed)");
   const N = Array.isArray(L.layers) ? L.layers.length : 0;
   need(N >= 4 && N <= 9, `layers: need 4–9 entries (7 is the house style) — got ${N}`);
@@ -3557,6 +3730,8 @@ function validateLab(L, opts = {}){
   need(Array.isArray(L.presets) && L.presets.length >= 1, "presets: at least one {q, label}");
   (L.presets || []).forEach((p, i) =>
     need(p && typeof p.q === "string" && typeof p.label === "string", `presets[${i}]: {q, label} strings`));
+  need((L.presets || []).some(p => p && !p.spoiler),
+    "presets: keep at least one visible (non-spoiler) guided example — the answer hides, the tour doesn't");
   need(typeof L.defaultQ === "string", "defaultQ: string — the lab's opening state");
   for (const f of ["analyze", "layerState", "trace", "verdict"])
     need(typeof L[f] === "function", `${f}: required function`);
@@ -3564,37 +3739,66 @@ function validateLab(L, opts = {}){
   need(L.render && typeof L.render === "object" && !Array.isArray(L.render), "render: object keyed by layer index");
   if (L.render && N) for (let i = 0; i < N; i++)
     need(typeof L.render[i] === "function", `render[${i}]: required function`);
+  if (L.onFire) need(typeof L.onFire === "function", "onFire: must be a function (optional)");
+  if (L.domMode) need(["parser", "innerHTML"].includes(L.domMode), 'domMode: "parser" | "innerHTML" (optional)');
   if (L.challenge){
     need(Array.isArray(L.challenge.steps) && L.challenge.steps.length, "challenge.steps: non-empty array");
+    const seen = new Set();
     (L.challenge.steps || []).forEach((s, i) => {
       need(s && typeof s.id === "string" && typeof s.label === "string" && typeof s.test === "function",
         `challenge.steps[${i}]: {id, label, test()}`);
-      need(typeof s.reveal === "string" && s.reveal.length, `challenge.steps[${i}].reveal: payload string`);
-      need(Array.isArray(s.hints) && s.hints.length >= 1, `challenge.steps[${i}].hints: at least one hint string`);
+      need(typeof s.reveal === "string" && s.reveal.length, `challenge.steps[${i}].reveal: payload string (required)`);
+      need(Array.isArray(s.hints) && s.hints.length >= 1, `challenge.steps[${i}].hints: at least one hint string (required)`);
+      if (typeof s.id === "string"){
+        need(!seen.has(s.id), `challenge.steps[${i}].id: "${s.id}" is duplicated — ids key saved progress`);
+        seen.add(s.id);
+      }
     });
   }
+  const WIRES = ["query", "path", "json", "form", "login", "fragment", "offline"];
   if (L.wire){
-    need(typeof L.wire.type === "string", "wire.type: string (query|path|json|form|login|jwt|fragment|offline)");
+    need(WIRES.includes(L.wire.type) || (typeof L.wire.build === "function" && typeof L.wire.parse === "function"),
+      `wire.type: one of ${WIRES.join(" | ")} — or any custom type IF you also supply build(q) and parse(raw)`);
     if (["query", "json", "form"].includes(L.wire.type))
       need(typeof L.wire.param === "string", `wire.param: required for type "${L.wire.type}"`);
   }
-  // smoke: actually run the engine. A lab that throws is not a lab.
-  try {
-    const a = L.analyze(L.defaultQ);
-    for (let i = 0; i < N; i++){
-      const st = L.layerState(i, a);
-      need(LAB_STATES.has(st), `layerState(${i}) returned "${st}" — use the vocabulary: ${[...LAB_STATES].join(" | ")}`);
-      const html = L.render[i](a);
-      need(typeof html === "string", `render[${i}](analysis) must return a string`);
+  if (L.card){
+    need(!Array.isArray(L.card.sig) || (L.card.sig.length === N && L.card.sig.every(c => "axds".includes(c))),
+      `card.sig: exactly ${N} marks, each one of a | x | d | s`);
+  }
+  // smoke: actually RUN the engine — on the default state, every preset, and
+  // a battery of hostile probes. A lab that crashes at the first keystroke
+  // is not a lab.
+  const probes = [L.defaultQ, ...(L.presets || []).map(p => p.q), "", "<", "'", '"', "//", "a".repeat(64)];
+  for (const probe of probes){
+    let a;
+    try {
+      a = L.analyze(probe);
+    } catch (err){
+      errs.push(`engine smoke test threw on analyze(${JSON.stringify(probe.slice(0, 24))}): ` + (err && err.message));
+      break;
     }
-    const tr = L.trace(a);
-    need(Array.isArray(tr) && tr.length === N, "trace(analysis): one entry per layer, each {h, state, b}");
-    if (Array.isArray(tr)) tr.forEach((s, i) =>
-      need(s && typeof s.h === "string" && typeof s.b === "string" && LAB_STATES.has(s.state),
-        `trace[${i}]: {h, b, state} and state must be in the vocabulary`));
-    need(Array.isArray(L.verdict(a)), "verdict(analysis): array of [key, value, cls] rows");
-  } catch (err){
-    errs.push("engine smoke test threw: " + (err && err.message));
+    try {
+      for (let i = 0; i < N; i++){
+        const st = L.layerState(i, a);
+        need(LAB_STATES.has(st), `layerState(${i}) returned "${st}" — use the vocabulary: ${[...LAB_STATES].join(" | ")}`);
+        const html = L.render[i](a);
+        need(typeof html === "string", `render[${i}](analysis) must return a string`);
+      }
+      const tr = L.trace(a);
+      need(Array.isArray(tr) && tr.length === N, "trace(analysis): one entry per layer, each {h, state, b}");
+      if (Array.isArray(tr)) tr.forEach((s, i) =>
+        need(s && typeof s.h === "string" && typeof s.b === "string" && LAB_STATES.has(s.state),
+          `trace[${i}]: {h, b, state} and state must be in the vocabulary`));
+      need(Array.isArray(L.verdict(a)), "verdict(analysis): array of [key, value, cls] rows");
+      if (typeof L.solved === "function") L.solved(a);
+      (L.challenge?.steps || []).forEach(st => { try { st.test(a); } catch (err){
+        errs.push(`challenge step "${st.id}" test() threw: ` + (err && err.message)); } });
+      if (typeof L.onFire === "function") L.onFire(a);
+    } catch (err){
+      errs.push("engine smoke test threw: " + (err && err.message));
+      break;
+    }
   }
   return { ok: !errs.length, errs };
 }
@@ -3610,13 +3814,25 @@ function showLabErrors(title, errs){
   document.body.appendChild(w);
 }
 
-/* Runs a lab file's code. The file must call STRATA.registerLab(lab). */
+/* Runs a lab file's code. The file must call STRATA.registerLab(lab).
+   A lab file is LOCAL CODE with the page's full privileges — validation
+   checks shape, not safety. Only load files you trust. */
 function loadLabText(code, name){
   const before = LABS.length;
+  let runErr = null;
+  const onErr = e => { if (!(e.target && e.target.src)) runErr = e.message || "script error"; };
+  window.addEventListener("error", onErr);
   const s = document.createElement("script");
   s.textContent = code + `\n//# sourceURL=${name || "strata-lab-file.js"}`;
-  try { document.head.appendChild(s); }
-  catch (err){ showLabErrors("Lab file threw", [String(err && err.message || err)]); return; }
+  document.head.appendChild(s);
+  window.removeEventListener("error", onErr);
+  if (runErr){
+    showLabErrors("Lab file failed to run", [
+      "The file threw while it evaluated: " + runErr,
+      "Usually a syntax error — the browser console has the exact line."
+    ]);
+    return;
+  }
   if (LABS.length === before)
     showLabErrors("Lab file did not register", ["The file ran but never called STRATA.registerLab(lab). Wrap your lab object in that call — see templates/lab-template.js."]);
 }
@@ -3624,6 +3840,10 @@ function loadLabText(code, name){
 window.STRATA = {
   labs: LABS,
   registerLab(lab, opts = {}){
+    if (BUILTIN_IDS.has(lab?.id)){
+      showLabErrors("Reserved id", [`id "${lab.id}" belongs to a built-in lab — pick a different id for yours.`]);
+      return false;
+    }
     const existing = LABS.findIndex(x => x.id === lab?.id);
     const v = validateLab(lab, { allowReplace: existing >= 0 });
     if (!v.ok){ showLabErrors(`Lab "${lab && lab.id ? lab.id : "?"}" failed validation`, v.errs); return false; }
@@ -3654,14 +3874,14 @@ scene.appendChild(callHost);
 
 let LAB = LABS[0];
 let planes = [], calls = [], tiers = [], planeDirty = [];
-const state = { q:"", active:0, cross:false, analysis:null, source:"boot", ix:false };
+const state = { q:"", active:0, cross:false, analysis:null, source:"boot", ix:false, alertSeen:null };
 
 /* lab picker */
 function buildPicker(){
   const groups = {};
   LABS.forEach(l => (groups[l.cat] ??= []).push(l));
   el("labsel").innerHTML = Object.entries(groups).map(([cat, ls]) =>
-    `<optgroup label="${esc(cat)}">${ls.map(l => `<option value="${l.id}">${l.code} · ${esc(l.title)}</option>`).join("")}</optgroup>`
+    `<optgroup label="${esc(cat)}">${ls.map(l => `<option value="${l.id}">${esc(l.code)} · ${esc(l.title)}</option>`).join("")}</optgroup>`
   ).join("");
 }
 el("labsel").addEventListener("change", e => buildLab(e.target.value));
@@ -3669,28 +3889,30 @@ buildPicker();
 
 function buildLab(id){
   LAB = LABS.find(l => l.id === id) || LABS[0];
-  window.__mode = LAB.id === "xss-dom" ? "innerHTML" : "parser";
+  // innerHTML-sink labs mark their DOM trees differently (script nodes are inert)
+  window.__mode = (LAB.domMode === "innerHTML" || LAB.id === "xss-dom") ? "innerHTML" : "parser";
+  fillGen++;   // cancels any lazy-fill chain still running for the previous lab
 
   // reset scene
   planes.forEach(p => p.remove()); calls.forEach(c => c.remove());
   planes = []; calls = []; planeDirty = []; el("stackup").innerHTML = "";
-  state.ix = false; state.source = "boot";
+  state.ix = false; state.source = "boot"; state.alertSeen = null;
 
   LAB.layers.forEach((L, i) => {
     const p = document.createElement("section");
     p.className = "plane";
-    p.innerHTML = `<div class="phead"><span class="lc">${L.code}</span><span class="lt">${L.title}</span><span class="lm">${L.meta}</span></div><div class="pbody"></div>`;
+    p.innerHTML = `<div class="phead"><span class="lc">${esc(L.code)}</span><span class="lt">${esc(L.title)}</span><span class="lm">${esc(L.meta)}</span></div><div class="pbody"></div>`;
     scene.appendChild(p); planes.push(p);
 
     const c = document.createElement("div");
     c.className = "pcall";
-    c.innerHTML = `<span><span class="bc">${L.code}</span><span class="bt">${L.title}</span><span class="bm">${L.meta}</span></span>`;
+    c.innerHTML = `<span><span class="bc">${esc(L.code)}</span><span class="bt">${esc(L.title)}</span><span class="bm">${esc(L.meta)}</span></span>`;
     callHost.appendChild(c); calls.push(c);
 
     const li = document.createElement("li");
     const b = document.createElement("button");
     b.className = "tier"; b.type = "button";
-    b.innerHTML = `<span class="lc">${L.code}</span><span class="lt">${L.title}</span><span class="lm">${L.meta}</span>`;
+    b.innerHTML = `<span class="lc">${esc(L.code)}</span><span class="lt">${esc(L.title)}</span><span class="lm">${esc(L.meta)}</span>`;
     b.addEventListener("click", () => go(i));
     li.appendChild(b); el("stackup").appendChild(li);
 
@@ -3810,24 +4032,27 @@ function layout(){
 }
 
 /* ── LAZY PLANE RENDERING ─────────────────────────────────────────────
-   A plane's body is rendered only when it can be seen: the active plane
-   synchronously, everything else in the background after typing settles.
-   While the student types on the surface (plane 0, always the active one
-   at that moment), NO plane body is rebuilt — the input's own DOM stays
-   intact and the layers refresh when the input goes quiet. */
+   The active plane renders synchronously; everything else fills in the
+   background after typing settles. The surface (plane 0) refreshes LIVE
+   while typing — with focus, caret, composition state and page scroll
+   restored — so the store visibly reacts to every keystroke. */
 function renderPlane(i){
-  planes[i].querySelector(".pbody").innerHTML = LAB.render[i](state.analysis);
+  const p = planes[i];
+  if (!p || i >= LAB.layers.length) return;   // a pending fill may outlive a lab switch
+  p.querySelector(".pbody").innerHTML = LAB.render[i](state.analysis);
   planeDirty[i] = false;
 }
 
-let fillT = 0;
+let fillT = 0, fillGen = 0;
 function scheduleFill(){
   clearTimeout(fillT);
   if (PERF) perfN.dirty = planeDirty.filter(Boolean).length;
   fillT = setTimeout(() => {
+    const gen = fillGen;
     const queue = planes.map((_, i) => i).filter(i => planeDirty[i]);
     if (!queue.length) return;
     const step = () => {
+      if (gen !== fillGen) return;                        // lab switched under us
       // never swap the surface out from under a focused input
       while (queue.length && queue[0] === 0 &&
              planes[0].contains(document.activeElement) &&
@@ -3840,19 +4065,32 @@ function scheduleFill(){
   }, 320);
 }
 
-function paint(o = {}){
+function paint(){
   const t0 = PERF ? performance.now() : 0;
-  const a = state.analysis;
   for (let i = 0; i < planes.length; i++) planeDirty[i] = true;
-
-  if (!o.skipSurface){ renderPlane(0); bindSurface(); }
-  else if (planeDirty[0]){ planeDirty[0] = false; }   // typing: keep the input's DOM
+  renderPlane(0); bindSurface();
   if (planeDirty[state.active] && state.active !== 0) renderPlane(state.active);
-  // in cross-section every body is ~texture; the active plane is enough
-
   paintHud();
   scheduleFill();
   if (PERF){ perfN.paint = performance.now() - t0; perfShow(); }
+}
+
+let composing = false;
+function paintLiveSurface(){
+  if (composing) return;                       // let the IME finish its composition
+  const active = document.activeElement;
+  const inSurface = active && planes[0] && planes[0].contains(active) && active.tagName === "INPUT";
+  if (!inSurface){ renderPlane(0); bindSurface(); return; }
+  const inputs = [...planes[0].querySelectorAll("input")];
+  const idx = inputs.indexOf(active);
+  const s0 = active.selectionStart, s1 = active.selectionEnd;
+  const site = planes[0].querySelector(".site");
+  const siteTop = site ? site.scrollTop : 0;
+  renderPlane(0); bindSurface();
+  const again = [...planes[0].querySelectorAll("input")][idx];
+  if (again){ again.focus(); try { again.setSelectionRange(s0, s1); } catch(_){} }
+  const site2 = planes[0].querySelector(".site");
+  if (site2) site2.scrollTop = siteTop;
 }
 
 /* The cheap, always-fresh HUD: trace, verdict, objectives, pill. */
@@ -3861,11 +4099,11 @@ function paintHud(){
   el("trace").innerHTML = LAB.trace(a).map((s, i) => {
     const cls = STEP_CLASS[s.state] ?? "";
     const active = i <= state.active;
-    return `<li class="step ${active ? cls : (s.state === "absent" ? "absent" : "")}"><div class="sh">${s.h}</div><div class="sb">${s.b}</div></li>`;
+    return `<li class="step ${active ? cls : (s.state === "absent" ? "absent" : "")}"><div class="sh">${esc(s.h)}</div><div class="sb">${s.b}</div></li>`;
   }).join("");
 
   el("verdict").innerHTML = LAB.verdict(a).map(([k, v, c]) =>
-    `<div class="vrow"><span class="k">${k}</span><span class="v ${c || ""}">${esc(v)}</span></div>`).join("");
+    `<div class="vrow"><span class="k">${esc(k)}</span><span class="v ${c || ""}">${esc(v)}</span></div>`).join("");
 
   refreshObjectives(a);
 
@@ -3895,7 +4133,14 @@ function refreshObjectives(a){
     return;
   }
   box.hidden = false;
-  const p = progFor(LAB.id);
+  // progress carries a fingerprint (step ids + title): a replaced lab
+  // resets, so stale solves never unlock the new version's spoilers
+  const fp = (LAB.challenge ? LAB.challenge.steps.map(s => s.id).join(",") : "") + "|" + LAB.title;
+  let p = progFor(LAB.id);
+  if (p.fp && p.fp !== fp){
+    PROGRESS[LAB.id] = { steps:{}, hints:{}, solved:false, solvedWithHelp:false, fp };
+    saveProg(); p = PROGRESS[LAB.id];
+  } else if (!p.fp){ p.fp = fp; }
   let done = 0, newly = false;
   ch.steps.forEach(st => {
     let ok = false;
@@ -3905,14 +4150,15 @@ function refreshObjectives(a){
   });
   const all = done === ch.steps.length;
   const interactive = ["typed", "intercept", "hint", "preset"].includes(state.source);
-  if (all && !p.solved && !p.solvedWithHelp && interactive){
-    if (state.source === "typed" || state.source === "intercept"){
-      p.solved = true; toast("Lab solved — and you supplied the payload yourself.");
-    } else {
-      p.solvedWithHelp = true;
-      toast("All objectives done — via preset or hint. Type the payload yourself for a clean solve.");
-    }
-    newly = true;
+  if (all && interactive && (state.source === "typed" || state.source === "intercept") && !p.solved){
+    const wasHelp = p.solvedWithHelp;
+    p.solved = true; p.solvedWithHelp = false; newly = true;
+    toast(wasHelp
+      ? "Clean solve — the hint-run is wiped from the record."
+      : "Lab solved — and you supplied the payload yourself.");
+  } else if (all && !p.solved && !p.solvedWithHelp){
+    p.solvedWithHelp = true; newly = true;
+    toast("All objectives done — via preset or hint. Type the payload yourself for a clean solve.");
   }
   if (newly){ saveProg(); if (consoleKey !== LAB.id + ":" + labUnlocked(LAB)) rebuildConsole(); }
 
@@ -3932,7 +4178,7 @@ function refreshObjectives(a){
           : `<button class="orb" data-step="${esc(st.id)}" data-act="run">Run it</button>`;
       ladder = `<div class="olad">${hintTxt}${payload}${btn}</div>`;
     }
-    const hintBtn = !okc && used <= rungs.length
+    const hintBtn = !okc && used < rungs.length
       ? `<button class="ohb" data-step="${esc(st.id)}" data-act="hint">${used ? "hint " + (used + 1) : "hint"}</button>` : "";
     return `<div class="obj ${okc ? "done" : ""}">
       <span class="od"></span><span class="ol">${esc(st.label)}</span>${hintBtn}${ladder}</div>`;
@@ -3950,7 +4196,7 @@ el("objList").addEventListener("click", e => {
   const p = progFor(LAB.id);
   if (b.dataset.act === "hint"){ p.hints[st.id] = Math.min((p.hints[st.id] || 0) + 1, st.hints.length + 1); saveProg(); paintHud(); }
   else if (b.dataset.act === "reveal"){ p.hints[st.id] = st.hints.length + 1; saveProg(); paintHud(); }
-  else if (b.dataset.act === "run"){ run(st.reveal, { source:"hint" }); }
+  else if (b.dataset.act === "run"){ fire(st.reveal, "hint"); }
 });
 
 /* Generic surface binding: EVERY [data-live] input on the surface (some
@@ -3958,6 +4204,11 @@ el("objList").addEventListener("click", e => {
    per animation frame. Enter / submit fires through intercept if on. */
 function bindSurface(){
   const inps = [...document.querySelectorAll("[data-live]")];
+  document.querySelectorAll(".alertsim .ok").forEach(b =>
+    b.addEventListener("click", () => {
+      state.alertSeen = state.q;
+      document.querySelectorAll(".alertsim").forEach(x => x.remove());
+    }));
   if (!inps.length) return;
   inps.forEach(inp => {
     inp.addEventListener("input", e => {
@@ -3965,6 +4216,8 @@ function bindSurface(){
       inps.forEach(o => { if (o !== e.target) o.value = state.q; });
       scheduleLive();
     });
+    inp.addEventListener("compositionstart", () => { composing = true; });
+    inp.addEventListener("compositionend", () => { composing = false; scheduleLive(); });
     const form = inp.closest("[data-run]");
     if (form) form.addEventListener("submit", ev => { ev.preventDefault(); fire(state.q, "typed"); });
     // Own the Enter key outright: implicit form submission is unreliable in
@@ -3979,18 +4232,26 @@ function bindSurface(){
 }
 
 let liveQueued = false;
+function doLive(){
+  liveQueued = false;
+  const t0 = PERF ? performance.now() : 0;
+  state.source = "typed";   // the student's own keystrokes — a live solve is a clean solve
+  state.analysis = LAB.analyze(state.q);
+  if (PERF) perfN.analyze = performance.now() - t0;
+  for (let i = 1; i < planes.length; i++) planeDirty[i] = true;
+  paintLiveSurface();       // L0 reacts live; focus/caret/IME/scroll preserved
+  paintHud();
+  scheduleFill();
+  layout();  // taint signature (blocked/absent planes) can change per keystroke
+  if (PERF) perfShow();
+}
 function scheduleLive(){
-  if (liveQueued) return; liveQueued = true;
-  requestAnimationFrame(() => {
-    liveQueued = false;
-    const t0 = PERF ? performance.now() : 0;
-    state.source = "typed";   // the student's own keystrokes — a live solve is a clean solve
-    state.analysis = LAB.analyze(state.q);
-    if (PERF) perfN.analyze = performance.now() - t0;
-    paint({ skipSurface:true });
-    layout();  // taint signature (blocked/absent planes) can change per keystroke
-    if (PERF) perfShow();
-  });
+  if (liveQueued) return;
+  liveQueued = true;
+  let done = false;
+  const go = () => { if (done) return; done = true; doLive(); };
+  requestAnimationFrame(go);        // preferred: coalesced to a frame
+  setTimeout(go, 250);              // rAF stalls in hidden tabs — the lab must not
 }
 
 function go(i){
@@ -4023,7 +4284,14 @@ function run(q, opts = {}){
   state.analysis = LAB.analyze(q);
   if (PERF) perfN.analyze = performance.now() - t0;
 
-  // keep the fake browser's scroll position across the surface rebuild
+  // labs may record per-fire side effects (attempt logs) — analyze stays pure
+  if (typeof LAB.onFire === "function" && state.source !== "boot"){
+    try { LAB.onFire(state.analysis); } catch(_){}
+  }
+
+  // keep the fake browser's scroll AND which input was focused across the rebuild
+  const oldInputs = planes[0] ? [...planes[0].querySelectorAll("input")] : [];
+  const focusIdx = oldInputs.indexOf(document.activeElement);
   const oldSite = planes[0] && planes[0].querySelector(".site");
   const siteScroll = oldSite ? oldSite.scrollTop : 0;
 
@@ -4033,8 +4301,10 @@ function run(q, opts = {}){
   if (newSite) newSite.scrollTop = siteScroll;
 
   if (opts.keepFocus || state.source === "typed"){
-    const inp = document.querySelector("[data-live]");
-    if (inp){ inp.focus(); try { inp.setSelectionRange(q.length, q.length); } catch (_){} }
+    const want = (focusIdx >= 0 && planes[0])
+      ? [...planes[0].querySelectorAll("input")][focusIdx]
+      : document.querySelector("[data-live]");
+    if (want){ want.focus(); try { want.setSelectionRange(q.length, q.length); } catch (_){} }
   }
 }
 
@@ -4077,6 +4347,10 @@ function openIx(q){
 function sendIx(){
   const r = parseRaw(ixRaw.value);
   if (r.error){ ixErr.textContent = r.error; return; }
+  const sentHost = (/^host:\s*(\S+)/mi.exec(ixRaw.value) || [])[1];
+  const builtHost = (/^host:\s*(\S+)/mi.exec(buildRaw(r.q)) || [])[1];
+  if (sentHost && builtHost && sentHost.toLowerCase() !== builtHost.toLowerCase())
+    toast("Note: this lab's origin is fixed — the Host header is scenery.");
   ixWrap.hidden = true;
   run(r.q, { source:"intercept" });
   toast("Sent — every layer re-derived from your edited bytes.");
@@ -4091,6 +4365,13 @@ el("ixBtn").addEventListener("click", () => {
   toast(state.ix ? "Intercept on — the next fire pauses at the wire." : "Intercept off.");
 });
 
+/* Path-wire encoding: spaces and control characters are percent-encoded,
+   bare % is escaped so the round-trip can't throw — but slashes stay real. */
+function encodePath(p){
+  return encodeURI(String(p).startsWith("/") ? p : "/" + p)
+    .replace(/%(?![0-9A-Fa-f]{2})/g, "%25");
+}
+
 /* Build the raw request the lab's surface would send for payload q. */
 function buildRaw(q){
   const w = LAB.wire; if (!w) return "";
@@ -4100,14 +4381,14 @@ function buildRaw(q){
     case "query":
       return `GET ${w.path}?${w.param}=${encodeURIComponent(q)} HTTP/1.1\nHost: ${host}\nAccept: text/html,*/*\n`;
     case "path":
-      return `GET ${String(q).startsWith("/") ? q : "/" + q} HTTP/1.1\nHost: ${host}\nAccept: */*\n`;
+      return `GET ${encodePath(q)} HTTP/1.1\nHost: ${host}\nAccept: */*\n`;
     case "json":
       return `POST ${w.path} HTTP/1.1\nHost: ${host}\nContent-Type: application/json\n\n${JSON.stringify({ [w.param]: q })}\n`;
     case "form":
       return `POST ${w.path} HTTP/1.1\nHost: ${host}\nContent-Type: application/x-www-form-urlencoded\n\n${w.param}=${encodeURIComponent(q)}\n`;
     case "login": {
-      const [email = "", pw = ""] = String(q).split(":");
-      return `POST /login HTTP/1.1\nHost: ${host}\nContent-Type: application/x-www-form-urlencoded\n\nemail=${encodeURIComponent(email.trim())}&password=${encodeURIComponent(pw.trim())}\n`;
+      const [email = "", pw = ""] = splitCreds(q);
+      return `POST /login HTTP/1.1\nHost: ${host}\nContent-Type: application/x-www-form-urlencoded\n\nemail=${encodeURIComponent(email)}&password=${encodeURIComponent(pw)}\n`;
     }
     default: return "";
   }
@@ -4123,11 +4404,11 @@ function parseRaw(raw){
   }
   try {
     const lines = raw.replace(/\r/g, "").split("\n");
-    const m = /^([A-Z]+)\s+(\S+)(?:\s+HTTP\/[\d.]+)?\s*$/.exec((lines[0] || "").trim());
+    const m = /^([A-Z]+)\s+(.+?)(?:\s+HTTP\/[\d.]+)?\s*$/.exec((lines[0] || "").trim());
     if (!m) return { error:"Can't read the request line — expected e.g. GET /path HTTP/1.1" };
     const target = m[2];
     const blank = lines.findIndex(l => l.trim() === "");
-    const body = blank >= 0 ? lines.slice(blank + 1).join("\n") : "";
+    const body = blank >= 0 ? lines.slice(blank + 1).join("\n").replace(/\n+$/, "") : "";
 
     switch (w.type){
       case "query": {
@@ -4137,7 +4418,7 @@ function parseRaw(raw){
         return { q: ps.get(w.param) };
       }
       case "path":
-        return { q: decodeURIComponent(target.split("?")[0]) };
+        return { q: target.split("?")[0] };   // %-decoding happens in the lab's analyze, exactly once
       case "json": {
         let j; try { j = JSON.parse(body || "{}"); } catch(_){ return { error:"Body isn't valid JSON." }; }
         if (!(w.param in j)) return { error:`Body has no "${w.param}" field.` };
@@ -4163,7 +4444,7 @@ addEventListener("keydown", e => {
   if (!ixWrap.hidden){ if (e.key === "Escape") ixWrap.hidden = true; return; }
   if (el("labview").hidden) return;   // inert on the catalog
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || "");
-  if (e.key === "Escape"){ goHome(); return; }
+  if (e.key === "Escape"){ if (!typing && !e.isComposing) goHome(); return; }
   if (e.altKey && e.code === "Space"){ e.preventDefault(); state.cross = !state.cross; layout(); return; }
   if (e.altKey && /^Digit[0-9]$/.test(e.code)){ e.preventDefault(); go(+e.code.slice(5)); return; }
   const up = e.key === "ArrowUp" || e.key === "k", down = e.key === "ArrowDown" || e.key === "j";
@@ -4187,14 +4468,15 @@ function scrollableWithin(t){
   return null;
 }
 stageEl.addEventListener("wheel", e => {
-  if (Math.abs(e.deltaY) < 12) return;
+  const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;   // Firefox classic mice report lines
+  if (Math.abs(dy) < 12) return;
   const sc = scrollableWithin(e.target);
   if (sc){
     const atTop = sc.scrollTop <= 0;
     const atBottom = sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 1;
-    if ((e.deltaY > 0 && !atBottom) || (e.deltaY < 0 && !atTop)) return;  // let the content scroll
+    if ((dy > 0 && !atBottom) || (dy < 0 && !atTop)) return;  // let the content scroll
   }
-  const next = state.active + (e.deltaY > 0 ? 1 : -1);
+  const next = state.active + (dy > 0 ? 1 : -1);
   if (next < 0 || next > LAB.layers.length - 1) return;
   e.preventDefault();
   const now = performance.now();
@@ -4222,11 +4504,11 @@ function buildHome(){
   const order = [], byCat = {};
   LABS.forEach(l => { if (!byCat[l.cat]){ byCat[l.cat] = []; order.push(l.cat); } byCat[l.cat].push(l); });
   const card = l => {
-    const m = CARD[l.id] || l.card || { sig:["a","a","a","a","a","a","a"], blurb: esc(l.blurb || "") };
-    const strip = m.sig.map(c => `<i class="sg-${c}"></i>`).join("");
+    const m = CARD[l.id] || l.card || { sig:Array(l.layers.length).fill("a"), blurb: esc(l.blurb || "") };
+    const strip = m.sig.slice(0, l.layers.length).map(c => `<i class="sg-${c}"></i>`).join("");
     const start = l.id === "foundations" ? `<span class="startchip">Start here</span>` : "";
     return `<button class="labcard" data-id="${l.id}">
-      <div class="lc-top"><span class="lc-code">${l.code}</span><span class="lc-diff">${esc(l.difficulty)}</span>${start}</div>
+      <div class="lc-top"><span class="lc-code">${esc(l.code)}</span><span class="lc-diff">${esc(l.difficulty)}</span>${start}</div>
       <div class="lc-title">${esc(l.title)}</div>
       <div class="lc-blurb">${m.blurb}</div>
       <div class="lc-strip"><span class="sig">${strip}</span><span class="lc-go">Open ›</span></div>
@@ -4277,13 +4559,14 @@ addEventListener("drop", e => {
 });
 
 function enterLab(id){
+  clearTimeout(enterLab._t);
   el("home").hidden = true;
   el("labview").hidden = false;
   buildLab(id);
   window.scrollTo(0, 0);
   if (!reduced){
     state.cross = true; state.active = 0; layout();
-    setTimeout(() => { state.cross = false; layout(); }, 1400);
+    enterLab._t = setTimeout(() => { state.cross = false; layout(); }, 1400);
   }
 }
 function goHome(){

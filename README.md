@@ -20,7 +20,7 @@ Open `strata.html`. That's it. (Or serve the folder if you want external lab-fil
 
 ## Authoring labs
 
-Read [`docs/AUTHORING.md`](docs/AUTHORING.md) — the full lab contract, the helper library, the style guide, and an AI authoring recipe. Start from [`templates/lab-template.js`](templates/lab-template.js); a complete worked example lives in [`labs-example/open-redirect.lab.js`](labs-example/open-redirect.lab.js).
+Read [`docs/AUTHORING.md`](docs/AUTHORING.md) — the full lab contract, the helper library, the style guide, and an AI authoring recipe. Start from [`templates/lab-template.js`](templates/lab-template.js); a complete worked example lives in [`labs-example/open-redirect.lab.js`](labs-example/open-redirect.lab.js). Note the trust model: a lab file is local code with the page's full privileges — validation checks shape, not safety. Only load files you trust.
 
 ```
 docs/AUTHORING.md            the lab format, style guide, AI recipe
@@ -32,7 +32,7 @@ backups/                     frozen snapshots of earlier versions
 
 ## Keyboard
 
-`⌥↑/↓` or `j/k` move through layers · `⌥0–6` jump · `⌥space` cross-section · `Enter` fire · `Esc` back to catalog. Scrolling inside a layer's content scrolls the content; the wheel only changes layers when there's nothing left to scroll.
+`⌥↑/↓` or `j/k` move through layers · `⌥0–9` jump · `⌥space` cross-section · `Enter` fire · `Esc` back to catalog. Scrolling inside a layer's content scrolls the content; the wheel only changes layers when there's nothing left to scroll.
 
 ## Status & roadmap
 

@@ -35,7 +35,7 @@ STRATA.registerLab({
 
   presets: [
     { q:"/account",                          label:"Honest return path" },
-    { q:"\\evil.example",                    label:"Backslash trick" },
+    { q:"/\\evil.example",                   label:"Backslash trick" },
     { q:"//evil.example",                    label:"Protocol-relative", spoiler:true },
     { q:"https://evil.example/phish",        label:"Absolute URL",      spoiler:true },
     { q:"javascript:alert(1)",               label:"Scheme swap",       spoiler:true }
@@ -74,7 +74,7 @@ STRATA.registerLab({
         ${field("returnTo", a.val, "Continue", "/account")}
         <div style="margin-top:12px">${panel}</div>`;
       return `<div class="applayer">${siteFrame({ path:"/login", search:false, body })}
-        ${a.js ? alertSim("shop.strata.lab", a.val) : ""}</div>`;
+        ${alertOnce(a.js, "shop.strata.lab", a.val)}</div>`;
     },
     1: a => explain("What the client does with the answer",
         "After a successful login the server replies <b>302 Found</b> with a <code>Location</code> header, and the browser follows it <em>automatically</em> — no prompt, no rendering of the redirect body. Whatever string sits in that header is where you land.")
@@ -132,7 +132,7 @@ STRATA.registerLab({
     return [
       ["Starts with “/”", a.val.startsWith("/") ? "yes" : "no", ""],
       ["Actually local", a.safe ? "yes" : "no", a.solved ? "bad" : ""],
-      ["Lands on", a.js ? "javascript:" : a.offsite ? "evil.example" : a.safe ? "this site" : "—", a.solved ? "bad" : ""],
+      ["Lands on", a.js ? "javascript:" : a.offsite ? (hostOf(a.val) || "off-site") : a.safe ? "this site" : "—", a.solved ? "bad" : ""],
       ["Lab", a.solved ? "Solved" : "Not solved", a.solved ? "good" : ""]
     ];
   },

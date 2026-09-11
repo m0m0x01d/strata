@@ -12,6 +12,12 @@ A lab file is **a plain `.js` file that calls `STRATA.registerLab({...})`**.
 Load it by dropping it onto the catalog page (or *Your labs → Load a lab
 file*). The validator smoke-runs your engine before the lab is accepted.
 
+> **Trust model:** a lab file is *local code* with the page's full
+> privileges — same trust level as opening any HTML file. Validation checks
+> **shape, not safety**; it exists to catch authoring mistakes, not to
+> sandbox hostile labs. Only load files you trust. Keep this in mind before
+> any community catalog exists.
+
 The best documentation is the source: `strata.html` contains 14 golden-reference
 labs. Read `LAB_SQLI` (the canonical attack lab), `LAB_FOUNDATIONS` (a guided
 tour, not an attack), and `LAB_SSRF` (free-typed engine with real parsing).
@@ -78,6 +84,8 @@ STRATA.registerLab({
   solved(a){ /* final objective test */ },     // required unless tour:true
 
   // ── challenge (strongly recommended) ───────────────────────────
+  //    hints[] and reveal are REQUIRED on every step; ids must be unique
+  //    (they key saved progress).
   challenge: { steps: [
     { id:"offsite", label:"Redirect off-site",          // shown in the Objectives rail
       test: a => a.offsite,                             // runs against live analysis
@@ -88,10 +96,19 @@ STRATA.registerLab({
 
   // ── intercept (optional; omit for tour-style labs) ─────────────
   wire: { type:"query", path:"/login", param:"returnTo" },
-  //   type: "query" | "path" | "json" | "form" | "login" | "jwt"
+  //   type: "query" | "path" | "json" | "form" | "login"
   //         | "fragment" (DOM labs — intercept button explains there's nothing to intercept)
   //         | "offline" (no live request, e.g. hash cracking)
-  // custom protocols may supply build(q) → raw and parse(raw) → {q} | {error}
+  //         — or ANY custom type, if you also supply build(q) → raw
+  //           and parse(raw) → {q} | {error} (see LAB_JWT for the reference)
+
+  // ── optional behavior hooks ────────────────────────────────────
+  // onFire(a): called when a run actually FIRES (Enter / preset / intercept)
+  //   — never on keystrokes. Use for per-fire side effects like attempt logs;
+  //   analyze() must stay pure.
+  // domMode: "parser" | "innerHTML" — how buildDomTree badges <script> nodes
+  //   for your lab. Set "innerHTML" for DOM-sink labs (the built-in xss-dom
+  //   lab sets it implicitly).
 
   // ── catalog card (optional for external labs) ──────────────────
   card: { sig: ["a","a","a","a","x","x","a"],           // per-layer preview strip
@@ -165,7 +182,10 @@ pointing at the layer the student is looking at.
 Presets are guided examples, not answers. Mark the preset that completes
 the **final objective** `spoiler: true` — it stays hidden until the lab is
 solved, then unlocks. Failure-state presets ("Blocked · script") are
-teaching moments: keep them visible.
+teaching moments: keep them visible. **At least one preset must stay
+visible** (the validator enforces it — an all-spoiler console leaves the
+student nothing to click). Convention: `defaultQ` equals the first
+(non-spoiler) preset, so the opening state has a highlighted button.
 
 ### Challenges
 
@@ -193,11 +213,22 @@ replay).
 
 1. Copy `templates/lab-template.js`, fill it in.
 2. Open `strata.html`, drop your file on the catalog (or *Load a lab file*).
-3. The validator checks structure AND smoke-runs
-   `analyze(defaultQ)` → `layerState(i, a)` → `render[i](a)` → `trace(a)`
-   → `verdict(a)` for every layer. Failures are listed in a modal.
+3. The validator checks structure AND smoke-runs the whole engine — not
+   just on `defaultQ`, but on **every preset and a battery of hostile
+   probes** (`""`, `<`, `'`, `"`, `//`, a long string). For each probe it
+   runs `analyze` → `layerState(i, a)` → `render[i](a)` → `trace(a)` →
+   `verdict(a)` → `solved(a)` → every `step.test(a)`. A lab that crashes at
+   the first keystroke fails validation, not in front of a student.
 4. Iterate until it loads, then play it: complete every objective, use
    every hint rung, try intercept mode, check the cross-section view.
+
+**Replacing labs.** Dropping a lab file whose `id` matches a lab you
+registered earlier *replaces* it in place — that's the iterate loop.
+Built-in ids are reserved (a clear error says so). When you replace a lab
+whose challenge changed, its saved progress resets (progress is
+fingerprinted by step ids + title). `registerLab(lab, { silent: true })`
+registers without navigating; by default the catalog rebuilds and your lab
+opens immediately.
 
 Add `?perf` to the URL for the timing HUD if you want to see what your
 `analyze`/renders cost.

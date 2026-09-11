@@ -11,7 +11,7 @@ STRATA.registerLab({
   code: "A01",                        // badge shown on the card and top bar
   cat: "Broken Access Control",       // catalog group (reuse an existing one when it fits)
   title: "One sentence: what is broken, and where",
-  difficulty: "Apprentice",           // Beginner | Apprentice | Practitioner
+  difficulty: "Apprentice",           // REQUIRED enum: Beginner | Apprentice | Practitioner
   goal: "Impacting HTML — what the student must achieve.",
 
   /* ── structure ── REQUIRED ── */
@@ -96,7 +96,8 @@ STRATA.registerLab({
   solved: a => !!a.solved,
 
   /* ── challenge — strongly recommended ──
-     Steps mirror the real attack: recon → first effect → impact. */
+     Steps mirror the real attack: recon → first effect → impact.
+     hints[] and reveal are REQUIRED per step; ids must be unique. */
   challenge: { steps: [
     { id:"step1", label:"First observable effect",
       test: a => !!a.solved,                       // refine per step
@@ -105,8 +106,15 @@ STRATA.registerLab({
       reveal: "the winning payload" }
   ]},
 
+  /* ── optional behavior hooks ──
+     onFire(a)  — called when a run FIRES (Enter/preset/intercept), never
+                  per keystroke; use for attempt logs. analyze() stays pure.
+     domMode    — "parser" | "innerHTML": how <script> nodes are badged in
+                  buildDomTree. Set "innerHTML" for DOM-sink labs. */
+
   /* ── intercept — optional ──
-     type: query | path | json | form | login | jwt | fragment | offline */
+     type: query | path | json | form | login | fragment | offline
+     (or a custom type with your own build(q) and parse(raw)) */
   wire: { type:"query", path:"/", param:"q" },
 
   /* ── catalog card ── optional (built-in labs keep theirs in the file)
