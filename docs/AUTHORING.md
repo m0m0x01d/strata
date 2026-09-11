@@ -166,6 +166,20 @@ Return an HTML string. Helpers are available as globals (also exported on
 `buildDomTree`, `intendedVsParsed`, `vectorList`, `alertSim`, `scanVectors`,
 `wafScan`, `md5`, `clip`, `plural`.
 
+**The live box echoes what was typed.** If your L0 renders an input with
+`data-live` (`field()` does), its `value` must be the student's own bytes —
+never a trimmed, defaulted or re-formatted version of them. `analyze()` is
+welcome to trim (`String(q).trim()`), substitute a default for an empty box,
+or split the input into parts; feeding any of that *back into the input* makes
+the box fight the student. The surface repaints on every keystroke, so a value
+that differs from what they typed is rewritten under the caret: trimming means
+the space they just typed vanishes and the next character takes its place
+(`a b c` can only be typed as `abc`), and a default re-fills a box they just
+cleared so the next keystrokes prepend to text nobody typed. Carry the raw
+string through the analysis (`typed: String(q)`) and render *that* in the
+input; show the trimmed/parsed/defaulted value anywhere else you like.
+`tests/regression.test.mjs` enforces this for every lab.
+
 **Safety rules (non-negotiable):**
 
 - `esc()` every dynamic byte that isn't deliberately taint-marked. The

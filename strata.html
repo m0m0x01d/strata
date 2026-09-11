@@ -3040,14 +3040,15 @@ const LAB_CRYPTO = {
       reveal:HASH_ADMIN }
   ]},
   analyze(q){
-    const hash = String(q).trim();
+    const typed = String(q);
+    const hash = typed.trim();
     const isMd5 = /^[a-f0-9]{32}$/i.test(hash);
     const plain = isMd5 ? (RAINBOW.get(hash.toLowerCase()) || null) : null;
     const bcrypt = /^\$2[aby]\$/.test(hash);
     const pwMode = (!isMd5 && !bcrypt && hash !== "") ? hash : null;   // typed a word, not a hash
     const myHash = pwMode ? md5(pwMode) : null;
     const who = HASHED.find(h => h.hash === hash.toLowerCase()) || null;
-    return { hash, plain, bcrypt, who, pwMode, myHash,
+    return { typed, hash, plain, bcrypt, who, pwMode, myHash,
              inList: pwMode ? RAINBOW.has(myHash) : false,
              solved: !!(who && who.email === "admin@aperture.lab" && plain) };
   },
@@ -3065,7 +3066,7 @@ const LAB_CRYPTO = {
       const body = `<h1 class="s-h">Password audit</h1>
         <p class="s-sub">leaked from the users table · testing hashes against a public rainbow table</p>
         <table class="db"><caption>dumped credentials</caption><tr><th>email</th><th>password hash</th><th>algo</th></tr>${rows}</table>
-        <div style="margin-top:14px">${field("Hash", a.hash, "Look up", "paste a hash")}</div>
+        <div style="margin-top:14px">${field("Hash", a.typed, "Look up", "paste a hash")}</div>
         <div style="margin-top:10px">${out}</div>`;
       return `<div class="applayer">${siteFrame({ path:"/admin/password-audit", search:false, body })}</div>`;
     },
@@ -3141,11 +3142,12 @@ const LAB_DESIGN = {
       reveal:"-100.00" }
   ]},
   analyze(q){
-    const raw = String(q).trim();
+    const typed = String(q);
+    const raw = typed.trim();
     const n = Number(raw);
     const valid = raw !== "" && isFinite(n);   // what the JSON body parser would accept
     const charged = valid ? n : null;          // invalid → the API rejects the order
-    return { raw, valid, charged, solved: !!(valid && charged < BUY.listPrice) };
+    return { typed, raw, valid, charged, solved: !!(valid && charged < BUY.listPrice) };
   },
   solved: a => a.solved,
   layerState(i, a){ return ["present","present","present","present","present", a.solved?"boundary":"present","present"][i]; },
@@ -3164,7 +3166,7 @@ const LAB_DESIGN = {
       const body = `<h1 class="s-h">Checkout</h1>
         <div class="cartline"><div class="s-photo cartpic"></div>
           <div><div class="s-name">${esc(BUY.name)}</div><div class="s-sub">list price $${BUY.listPrice.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div></div>
-        ${field("Price ($)", a.raw, "Place order", "1140.00")}
+        ${field("Price ($)", a.typed, "Place order", "1140.00")}
         ${receipt}`;
       return `<div class="applayer">${siteFrame({ path:"/checkout", search:false, body })}</div>`;
     },
@@ -3274,14 +3276,15 @@ const LAB_MISCONFIG = {
       reveal:"/static/../.env" }
   ]},
   analyze(q){
-    const raw = String(q).trim() || "/";
+    const typed = String(q);
+    const raw = typed.trim() || "/";
     let decoded = raw;
     try { decoded = decodeURIComponent(raw); } catch(_){ /* malformed escapes stay raw */ }
     const stripped = decoded.split("?")[0];
     const trailing = stripped !== "/" && /\/$/.test(stripped);   // /.env/ is not a file request
     const path = normalizePath(stripped);
     const file = (!trailing && SERVED[path]) || null;
-    return { raw, path, traversed: path !== stripped, file, solved: !!file };
+    return { typed, raw, path, traversed: path !== stripped, file, solved: !!file };
   },
   solved: a => a.solved,
   layerState(i, a){ return ["present","present","present", a.solved?"boundary":"present","present","present", a.solved?"present":"present"][i]; },
@@ -3294,8 +3297,8 @@ const LAB_MISCONFIG = {
       else panel = `<div class="s-empty">404 · ${esc(a.raw)} not found.</div>`;
       const body = `<div class="urlbar" style="margin-bottom:14px"><span class="scheme"><span class="lockx">🔒</span>https</span>
         <span class="path">shop.aperture.lab</span>
-        <input class="s-q pathinput" data-live data-run-inline spellcheck="false" value="${esc(a.raw)}"></div>
-        ${field("", a.raw, "Fetch", "/.env")}
+        <input class="s-q pathinput" data-live data-run-inline spellcheck="false" value="${esc(a.typed)}"></div>
+        ${field("", a.typed, "Fetch", "/.env")}
         <div style="margin-top:6px">${panel}</div>`;
       return `<div class="applayer">${siteFrame({ path:esc(a.raw), search:false, body })}</div>`;
     },
@@ -3488,6 +3491,7 @@ const LAB_AUTH = {
       reveal:"admin@aperture.lab : *bruteforce*" }
   ]},
   analyze(q){
+    const typed = String(q);
     const [email, pw] = splitCreds(q);
     const exists = Object.prototype.hasOwnProperty.call(CREDS, email);
     let brute = null, pwUsed = pw, ok;
@@ -3501,7 +3505,7 @@ const LAB_AUTH = {
     const admin = ok && email === "admin@aperture.lab";
     let err = null;
     if (!ok) err = exists ? "Incorrect password." : "No account with that email.";
-    return { email, pw:pwUsed, exists, ok, admin, err, brute, solved: admin };
+    return { typed, email, pw:pwUsed, exists, ok, admin, err, brute, solved: admin };
   },
   /* analyze stays pure — an attempt is a FIRE (Enter / preset / intercept),
      never a keystroke. The shell calls this from run(). */
@@ -3528,7 +3532,7 @@ const LAB_AUTH = {
           : `${COMMON_PW.length} guesses, no lockout — the password is NOT in this list. A real list is millions long.`}</div>` : "";
       const body = `<h1 class="s-h">Sign in</h1>
         <p class="s-sub">enter as <code>email : password</code></p>
-        ${field("Credentials", a.email + " : " + (a.pw==="*bruteforce*"?"*bruteforce*":a.pw), "Log in", "email : password")}
+        ${field("Credentials", a.typed, "Log in", "email : password")}
         <div style="margin-top:12px">${panel}</div>${log}${brute}`;
       return `<div class="applayer">${siteFrame({ path:"/login", search:false, body })}</div>`;
     },
@@ -3642,12 +3646,13 @@ const LAB_JWT = {
       reveal:"admin" }
   ]},
   analyze(q){
-    const role = String(q).trim() || "user";
+    const typed = String(q);
+    const role = typed.trim() || "user";
     const header = { alg:"none", typ:"JWT" };
     const payload = { sub:"you@aperture.lab", role, iat:1753900000 };
     const token = jwtToken(role);
     const admin = role === "admin" || role === "superadmin";
-    return { role, header, payload, token, admin, solved: admin };
+    return { typed, role, header, payload, token, admin, solved: admin };
   },
   solved: a => a.solved,
   layerState(i, a){ return ["present","present","present","present", a.solved?"boundary":"present","present","present"][i]; },
@@ -3660,7 +3665,7 @@ const LAB_JWT = {
         <div class="jwtdec"><div class="jrow"><span>header</span><code>${esc(JSON.stringify(a.header))}</code></div>
           <div class="jrow"><span>payload</span><code>{ "sub":"you@aperture.lab", "role":"<b class='rl'>${esc(a.role)}</b>", … }</code></div>
           <div class="jrow"><span>signature</span><code>${a.header.alg==="none"?"— none —":"…"}</code></div></div>
-        ${field("role", a.role, "Set role", "admin")}
+        ${field("role", a.typed, "Set role", "admin")}
         <div style="margin-top:12px">${a.admin ? `<div class="ownerbad">⚠ The server accepted <b>role=${esc(a.role)}</b> without checking the signature. You now hold the admin console — users, refunds, settings.</div>` : `<div class="ownerok">You are a normal user. Change the role claim and watch the server believe it.</div>`}</div>`;
       return `<div class="applayer">${siteFrame({ path:"/account", search:false, body })}</div>`;
     },
@@ -3747,12 +3752,13 @@ const LAB_LOGGING = {
       reveal:"account takeover" }
   ]},
   analyze(q){
-    const raw = String(q).trim();
+    const typed = String(q);
+    const raw = typed.trim();
     const known = Object.prototype.hasOwnProperty.call(SCENARIOS, raw);
     const key = known ? raw : "normal";   // unknown input replays a quiet window — never the attack
     const s = SCENARIOS[key];
     const logged = s.takeover ? 1 : 0;   // only the final 200 gets logged; failures dropped
-    return { raw, key, unknown: raw !== "" && !known, s, logged, alerts:0, solved: s.takeover };
+    return { typed, raw, key, unknown: raw !== "" && !known, s, logged, alerts:0, solved: s.takeover };
   },
   solved: a => a.solved,
   tour:false,
@@ -3762,7 +3768,7 @@ const LAB_LOGGING = {
       const s = a.s;
       const body = `<h1 class="s-h">Security dashboard</h1>
         <p class="s-sub">what the blue team sees while the attack runs</p>
-        ${field("Scenario", a.raw, "Replay", "account takeover")}
+        ${field("Scenario", a.typed, "Replay", "account takeover")}
         ${a.unknown ? `<div class="loginerr" style="margin-top:8px">No scenario called “${esc(a.raw)}” — replaying a quiet window instead. Use one of the four keys below.</div>` : ""}
         <div class="socgrid">
           <div class="soctile"><div class="soch">Requests seen</div><div class="socn">${s.reqs.toLocaleString()}</div></div>
@@ -3965,7 +3971,8 @@ if is_internal(ip): refuse`,
       reveal:"http://2852039166/latest/meta-data/iam/security-credentials/" }
   ]},
   analyze(q){
-    const url = String(q).trim();
+    const typed = String(q);
+    const url = typed.trim();
     const host = hostOf(url);
     const cls = host ? classifyHost(host) : { kind:"none" };
     let internal = null;
@@ -3980,7 +3987,7 @@ if is_internal(ip): refuse`,
     const bare = host ? host.replace(/^\[|\]$/g, "") : "";   // brackets off, trailing dot stays: an alias is not a disguise
     const numericHost = !!host && (bare.includes(":") || parseIPv4(bare) !== null);
     const altForm = !!(internal && internal.creds && canonical && host !== canonical && numericHost);
-    return { url, host, internal, external, canonical, altForm, solved: !!(internal && internal.creds) };
+    return { typed, url, host, internal, external, canonical, altForm, solved: !!(internal && internal.creds) };
   },
   solved: a => a.solved,
   layerState(i, a){ return ["present","present","present","present", a.internal?"boundary":"present","present","present"][i]; },
@@ -3993,7 +4000,7 @@ if is_internal(ip): refuse`,
       else panel = `<div class="s-empty">Enter a URL to import (http/https).</div>`;
       const body = `<h1 class="s-h">Import product image</h1>
         <p class="s-sub">paste an image URL — our server will fetch and store it</p>
-        ${field("Image URL", a.url, "Import", "https://…")}
+        ${field("Image URL", a.typed, "Import", "https://…")}
         <div style="margin-top:12px">${panel}</div>`;
       return `<div class="applayer">${siteFrame({ path:"/products/import", search:false, body })}</div>`;
     },
@@ -4295,6 +4302,7 @@ const LAB_LFI = {
   ]},
   analyze(q){
     const s = String(q).trim();
+    const typed = String(q);            // the box shows your bytes; the FS sees the trimmed path
     const r = resolveUnder("docs", s);
     let content = null, err = null, status = "doc";
     if (r.path.startsWith("docs/")){
@@ -4303,7 +4311,7 @@ const LAB_LFI = {
     } else if (r.path === "etc/shadow"){ err = "PermissionError"; status = "denied"; }
     else if (FS_FILES[r.path] != null){ content = FS_FILES[r.path]; status = r.absolute ? "absolute" : "escape"; }
     else { err = "FileNotFoundError"; status = "miss"; }
-    return { q:s, ...r, content, err, status,
+    return { q:s, ...r, typed, content, err, status,
       outside: status === "escape" || status === "absolute",
       secrets: r.path === "app/config.ini" && content != null,
       solved: (status === "escape" || status === "absolute") && content != null };
@@ -4322,7 +4330,7 @@ const LAB_LFI = {
       else panel = `<pre class="${a.outside ? "s-leak" : "s-ok"}">${esc(a.content)}</pre>`;
       const body = `<h1 class="s-h">Aperture Docs</h1>
         <p class="s-sub">internal drafts · view a file</p>
-        ${field("File", a.q, "View", "intro.txt")}
+        ${field("File", a.typed, "View", "intro.txt")}
         <div style="margin-top:14px">${panel}</div>`;
       return `<div class="applayer">${siteFrame({ path:"/docs?f=" + encodeURIComponent(a.q).replace(/%2F/gi, "/"), search:false, body })}</div>`;
     },
@@ -5161,18 +5169,44 @@ function paint(){
 }
 
 let composing = false;
+/* Keeping the caret alive across a surface repaint.
+   The patched build is a DIFFERENT page from the vulnerable one: it greys
+   out the site's search box (disabled, no data-live) and puts the live
+   field in the body instead. So a raw input INDEX is not a stable seat —
+   the keystroke that first trips a patch swaps the layout underneath the
+   caret and index 0 becomes the DISABLED box. focus() on a disabled input
+   is a no-op, the caret falls to <body>, and every keystroke after that is
+   dropped: the student types a payload into a dead box. Seat the caret by
+   what the input IS (live? the fragment bar?), and never on a disabled one. */
+function liveSeat(inp){
+  if (!inp || !planes[0] || inp.tagName !== "INPUT" || !planes[0].contains(inp)) return null;
+  return {
+    frag: inp.hasAttribute("data-frag"),
+    live: [...planes[0].querySelectorAll("input[data-live]")].indexOf(inp),
+    any:  [...planes[0].querySelectorAll("input")].indexOf(inp)
+  };
+}
+function reseat(seat){
+  if (!seat || !planes[0]) return null;
+  if (seat.live >= 0){                       // it was a live input — find the live input again
+    const live = [...planes[0].querySelectorAll("input[data-live]")].filter(n => !n.disabled);
+    const same = live.filter(n => n.hasAttribute("data-frag") === seat.frag);
+    return same[Math.min(seat.live, same.length - 1)] || live[Math.min(seat.live, live.length - 1)] || null;
+  }
+  const want = [...planes[0].querySelectorAll("input")][seat.any];
+  return want && !want.disabled ? want : null;
+}
 function paintLiveSurface(){
   if (composing) return;                       // let the IME finish its composition
   const active = document.activeElement;
   const inSurface = active && planes[0] && planes[0].contains(active) && active.tagName === "INPUT";
   if (!inSurface){ renderPlane(0); bindSurface(); return; }
-  const inputs = [...planes[0].querySelectorAll("input")];
-  const idx = inputs.indexOf(active);
+  const seat = liveSeat(active);
   const s0 = active.selectionStart, s1 = active.selectionEnd;
   const site = planes[0].querySelector(".site");
   const siteTop = site ? site.scrollTop : 0;
   renderPlane(0); bindSurface();
-  const again = [...planes[0].querySelectorAll("input")][idx];
+  const again = reseat(seat);
   if (again){ again.focus(); try { again.setSelectionRange(s0, s1); } catch(_){} }
   const site2 = planes[0].querySelector(".site");
   if (site2) site2.scrollTop = siteTop;
@@ -5457,8 +5491,7 @@ function run(q, opts = {}){
   }
 
   // keep the fake browser's scroll AND which input was focused across the rebuild
-  const oldInputs = planes[0] ? [...planes[0].querySelectorAll("input")] : [];
-  const focusIdx = oldInputs.indexOf(document.activeElement);
+  const seat = liveSeat(document.activeElement);
   const oldSite = planes[0] && planes[0].querySelector(".site");
   const siteScroll = oldSite ? oldSite.scrollTop : 0;
 
@@ -5468,9 +5501,7 @@ function run(q, opts = {}){
   if (newSite) newSite.scrollTop = siteScroll;
 
   if (opts.keepFocus || state.source === "typed"){
-    const want = (focusIdx >= 0 && planes[0])
-      ? [...planes[0].querySelectorAll("input")][focusIdx]
-      : document.querySelector("[data-live]");
+    const want = reseat(seat) || document.querySelector("[data-live]:not([disabled])");
     if (want){ want.focus(); try { want.setSelectionRange(q.length, q.length); } catch (_){} }
   }
 }
@@ -6019,18 +6050,15 @@ function sanitizeSandboxResult(m){
 function repaintFromSandbox(){
   const r = LAB._cache && LAB._cache.get(state.q);
   if (!r) return;
-  const oldInputs = planes[0] ? [...planes[0].querySelectorAll("input")] : [];
-  const focusIdx = oldInputs.indexOf(document.activeElement);
+  const seat = liveSeat(document.activeElement);
   const oldSite = planes[0] && planes[0].querySelector(".site");
   const siteScroll = oldSite ? oldSite.scrollTop : 0;
   state.analysis = LAB._mark(state.q, r);
   paint(); layout();
   const newSite = planes[0] && planes[0].querySelector(".site");
   if (newSite) newSite.scrollTop = siteScroll;
-  if (focusIdx >= 0 && planes[0]){
-    const want = [...planes[0].querySelectorAll("input")][focusIdx];
-    if (want){ want.focus(); try { want.setSelectionRange(state.q.length, state.q.length); } catch(_){} }
-  }
+  const want = reseat(seat);
+  if (want){ want.focus(); try { want.setSelectionRange(state.q.length, state.q.length); } catch(_){} }
 }
 function wireSandboxWorker(worker){
   worker.onmessage = (e) => {

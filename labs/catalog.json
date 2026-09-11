@@ -5,7 +5,7 @@
     {
       "id": "open-redirect",
       "file": "open-redirect.lab.js",
-      "sha256": "5ca5134029eeb7e9d9ea71381401f8dd883ab7db1a914a9336e83ce6559ef4e5",
+      "sha256": "d3257b000a9bcb23f9b7d6b64e9abe9895fd744f96380a6ee1f980f337946874",
       "title": "Unvalidated redirect after login",
       "difficulty": "Apprentice",
       "blurb": "The login page sends users wherever returnTo says. //host is protocol-relative; javascript: is worse."

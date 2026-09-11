@@ -46,13 +46,14 @@ STRATA.registerLab({
   /* ── engine ── classifies where the browser would actually go.
      Real parsing, free-typed: any scheme, any spelling. */
   analyze(q){
-    const val = String(q).trim();
+    const typed = String(q);      // the live box must echo your bytes, not the trimmed ones
+    const val = typed.trim();
     const js = /^\s*javascript:/i.test(val);
     const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(val);
     const protoRel = val.startsWith("//") || /^[\\/]{2}/.test(val);   // // and \/\ — browsers treat \ as /
     const offsite = !js && (protoRel || hasScheme);
     const safe = !js && !offsite && val.startsWith("/");
-    return { val, js, offsite, safe, hasScheme, solved: offsite || js };
+    return { typed, val, js, offsite, safe, hasScheme, solved: offsite || js };
   },
   solved: a => a.solved,
   layerState(i, a){
@@ -73,7 +74,7 @@ STRATA.registerLab({
         panel = `<div class="loginerr">“${esc(a.val)}” isn’t a path. Try something starting with <code>/</code>.</div>`;
       const body = `<h1 class="s-h">Sign in to Aperture</h1>
         <p class="s-sub">you’ll be returned to the page you came from</p>
-        ${field("returnTo", a.val, "Continue", "/account")}
+        ${field("returnTo", a.typed, "Continue", "/account")}
         <div style="margin-top:12px">${panel}</div>`;
       return `<div class="applayer">${siteFrame({ path:"/login", search:false, body })}
         ${alertOnce(a.js, "shop.strata.lab", a.val)}</div>`;

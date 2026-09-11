@@ -5,7 +5,7 @@ const shellAt = script.lastIndexOf("/*", script.indexOf("SHELL — lab-agnostic"
 globalThis.window = globalThis;
 new Function(script.slice(0, shellAt) + `
 ;globalThis.__T = { LABS, validateLab, md5, RAINBOW, jwtToken, splitCreds, safeHref,
-  callsAlert, autoFires, scanVectors, AUTH_LOG, normalizePath };`)();
+  callsAlert, autoFires, scanVectors, AUTH_LOG, normalizePath, esc };`)();
 // encodePath lives in the DOM shell — run its REAL source headless
 const encodePathSrc = script.match(/function encodePath\(p\)\{[\s\S]*?\n\}/)[0];
 const encodePath = new Function(encodePathSrc + "; return encodePath;")();
@@ -13,6 +13,7 @@ const T = globalThis.__T;
 let fails = 0;
 const ok = (cond, msg) => { if (!cond){ fails++; console.log("FAIL:", msg); } };
 const by = id => T.LABS.find(l => l.id === id);
+const esc = T.esc;
 let a;
 
 /* 1. every built-in lab passes the NEW probe-based validator */
@@ -158,6 +159,29 @@ ok(T.safeHref("JavaScript:alert(1)") === "#", "safeHref: case-insensitive");
 ok(T.safeHref("data:text/html,x") === "#", "safeHref: data: blocked");
 ok(T.safeHref("/account") === "/account", "safeHref: relative path kept");
 ok(T.safeHref("https://x.example/") === "https://x.example/", "safeHref: https kept");
+
+/* 10. the live box echoes the student's own bytes.
+   Several labs let analyze() fall back to a default for an empty query so the
+   lab always has something to draw (jwt -> role "user", misconfig -> path "/").
+   Feeding that fallback back INTO the live input is what broke: clearing the
+   box re-filled it with text nobody typed, caret at 0, so the next keystrokes
+   prepended — "admin" became "adminuser" and the lab reported a role the
+   student never set. Renders may show the fallback anywhere else; the input
+   must show what was typed — auth used to rebuild its box from the parsed
+   "email : password" halves, which made its own reveal payload untypeable. */
+for (const L of T.LABS){
+  if (!L.render || typeof L.render[0] !== "function") continue;
+  for (const q of ["", "zz", "' OR 1=1-- "]){
+    let h = "";
+    try { h = L.render[0](L.analyze(q)); } catch (_){ continue; }   // DOM-only renders opt out
+    for (const tag of h.match(/<input[^>]*>/g) || []){
+      if (!/data-live/.test(tag) || /\bdisabled\b/.test(tag)) continue;
+      const m = tag.match(/value="([^"]*)"/);
+      const shown = m ? m[1] : "<no value attr>";
+      ok(shown === esc(q), `${L.id}: live box shows ${JSON.stringify(shown)} when the student typed ${JSON.stringify(q)}`);
+    }
+  }
+}
 
 /* 10. the example lab still validates and plays (fixed backslash preset) */
 const file = readFileSync(new URL("../labs/open-redirect.lab.js", import.meta.url).pathname, "utf8");
