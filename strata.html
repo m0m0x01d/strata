@@ -1166,13 +1166,12 @@ select.labsel option{background:var(--strata); color:var(--ink)}
 .labcard.solved:hover{border-color:var(--ok)}
 
 /* ── PATCHED LENS + SEVERITY ───────────────────────────────────── */
-.patchresp{margin:10px auto;max-width:620px;border:1px solid color-mix(in srgb,var(--ok) 45%,var(--rule));border-radius:10px;
-  background:var(--strata);padding:18px 20px;font-family:var(--mono)}
-.pr-status{font:600 11px/1 var(--mono);letter-spacing:.1em;color:var(--breach);margin-bottom:10px}
-.patchresp .pr-title{font:700 17px/1.3 var(--sans);color:var(--ok);margin-bottom:8px}
-.pr-msg{font:12.5px/1.55 var(--sans);color:var(--ink)}
-.pr-why{font:11.5px/1.55 var(--sans);color:var(--dim);margin-top:10px;border-top:1px solid var(--rule);padding-top:10px}
-.patchresp.client .pr-status{display:none}
+.patchheld{border:1px solid color-mix(in srgb,var(--ok) 40%,var(--rule));border-radius:10px;
+  background:color-mix(in srgb,var(--ok) 5%,var(--strata));padding:14px 16px}
+.ph-t{font:700 15px/1.3 var(--sans);color:var(--ok);margin-bottom:7px}
+.ph-m{font:12.5px/1.6 var(--sans);color:var(--ink)}
+.ph-m code{color:var(--taint)}
+.ph-p{font:11.5px/1.55 var(--sans);color:var(--dim);margin-top:10px;border-top:1px solid var(--rule);padding-top:9px}
 .plane.st-clean .pbody{opacity:.38;filter:saturate(.5)}
 .plane.st-clean .phead{opacity:.5}
 .plane.st-clean{outline:1px dashed color-mix(in srgb,var(--ok) 22%,transparent);outline-offset:-2px}
@@ -2014,9 +2013,13 @@ const LAB_SQLI = {
     ],
     options:[
       { id:"parameterize", label:"Parameterized query", code:'cur = db.execute("SELECT * FROM products\\n  WHERE name LIKE ? AND released", ("%" + q + "%",))',
-        apply(){ return { blocked:true, at:4, why:"The query and the data travel separately — the parser assembles the statement first and never re-reads your bytes as syntax. Both vectors die before the lexer exists." }; } },
+        apply(q){ return /'/.test(String(q))
+          ? { blocked:true, at:4, why:"The query and the data travel separately — your quotes became the VALUE of a parameter. The parser assembles the statement first and never re-reads your bytes as syntax." }
+          : { blocked:false, at:null, why:"An ordinary search — served normally. A real fix is invisible to honest traffic; that's the point." }; } },
       { id:"escape", label:"Escape quotes at the boundary", code:'q = q.replace(/\'/g, "\'\'")   # or the driver\'s escape()',
-        apply(q){ return { blocked:true, at:5, why:"'' is an escaped quote inside the literal — the string never terminates early, so the UNION stays text inside the quotes. (Charset confusion is this fix's real-world footnote; parameterizing has none.)" }; } },
+        apply(q){ return /'/.test(String(q))
+          ? { blocked:true, at:5, why:"'' is an escaped quote inside the literal — the string never terminates early, so the UNION stays text inside the quotes. (Charset confusion is this fix's real-world footnote; parameterizing has none.)" }
+          : { blocked:false, at:null, why:"No quotes — nothing to escape; the value stays data. (Numeric injections elsewhere are why parameterizing is better.)" }; } },
       { id:"hide-errors", label:"Hide SQL errors from users", code:"except DBError: return generic_500()",
         apply(){ return { blocked:false, at:5, why:"Quieter, not safer. The UNION executes and its rows still render in the page — you hid the error message, not the injection." }; } },
       { id:"limit", label:"Append LIMIT 1 to the query", code:'sql = f"… WHERE name LIKE \'%{q}%\' LIMIT 1"',
@@ -2289,7 +2292,9 @@ const LAB_REFLECTED = {
     ],
     options:[
       { id:"autoescape", label:"Autoescape the template", code:"{{ q }}   →   &lt;svg onload=…   (Jinja2 default)",
-        apply(q){ return { blocked:true, at:4, why:"The tags leave the server pre-neutralized: the browser sees visible text that SPELLS a payload. All three vectors become decorations." }; } },
+        apply(q){ return /<[a-z!/]/i.test(String(q))
+          ? { blocked:true, at:4, why:"The tags leave the server pre-neutralized: the browser sees visible text that SPELLS a payload. All three vectors become decorations." }
+          : { blocked:false, at:null, why:"Plain text — served unchanged. Escaping only rewrites the characters that would become markup." }; } },
       { id:"strip-script", label:"Strip <script> pairs", code:'q = q.replace(/<script[\\s\\S]*?<\\/script>/gi, "")',
         apply(q){ const cleaned = q.replace(/<script[\s\S]*?<\/script\s*>/gi, "");
           let fires = false; try { fires = LAB_REFLECTED.analyze(cleaned).fires; } catch(_){ fires = false; }
@@ -2297,7 +2302,9 @@ const LAB_REFLECTED = {
             ? { blocked:false, at:5, why:"Two of these payloads never contained a <script> — handlers were the vector. Removing script nodes stops exactly one of three." }
             : { blocked:true, at:4, why:"The script node is gone — but the payload class isn't. This fix survives only payloads you thought of first." }; } },
       { id:"csp", label:"CSP: script-src 'self'", code:"Content-Security-Policy: script-src 'self'",
-        apply(){ return { blocked:true, at:3, why:"Inline script AND inline handlers are refused — all three vectors die at the browser door. One caveat: add 'unsafe-inline' anywhere and this header becomes decoration." }; } },
+        apply(q){ return /<script\b|\son[a-z]+\s*=/i.test(String(q))
+          ? { blocked:true, at:3, why:"Inline script AND inline handlers are refused — the vectors die at the browser door. One caveat: add 'unsafe-inline' anywhere and this header becomes decoration." }
+          : { blocked:false, at:null, why:"Nothing here executes — served as-is." }; } },
       { id:"allowlist", label:"Allowlist input [a-z0-9 space]", code:'if (!/^[a-z0-9 ]*$/i.test(q)) return 400',
         apply(q){ return /^[a-z0-9 ]*$/i.test(q)
           ? { blocked:false, at:null, why:"Passes validation — it's a plain search, and that's fine." }
@@ -2414,11 +2421,20 @@ const LAB_DOM = {
     ],
     options:[
       { id:"textcontent", label:"Write to .textContent", code:"el.textContent = location.hash.slice(1)",
-        apply(){ return { blocked:true, at:1, why:"textContent can only ever make a text node — no parse, no promotion, no handlers. The sink itself refuses to be a vulnerability." }; } },
+        apply(q){ let fires = false; try { fires = LAB_DOM.analyze(q).fires; } catch(_){}
+          return fires
+            ? { blocked:true, at:1, why:"textContent can only ever make a text node — your markup renders as visible words. No parse, no promotion, no handlers. The sink itself refuses to be a vulnerability." }
+            : { blocked:false, at:null, why:"Renders as text — which is all this input ever was." }; } },
       { id:"escape-first", label:"Escape before innerHTML", code:"el.innerHTML = escapeHtml(fragment)",
-        apply(){ return { blocked:true, at:1, why:"&lt;svg… renders as the visible WORDS of your payload. innerHTML is still the sink, but its input is no longer markup." }; } },
+        apply(q){ let fires = false; try { fires = LAB_DOM.analyze(q).fires; } catch(_){}
+          return fires
+            ? { blocked:true, at:1, why:"&lt;svg… renders as the visible WORDS of your payload. innerHTML is still the sink, but its input is no longer markup." }
+            : { blocked:false, at:null, why:"Text stays text — served." }; } },
       { id:"sanitize", label:"Sanitize with an allowlist lib", code:"el.innerHTML = DOMPurify.sanitize(fragment)",
-        apply(){ return { blocked:true, at:1, why:"Tags may survive; handlers never do. Both vectors lose their on* attribute at the same line." }; } },
+        apply(q){ let fires = false; try { fires = LAB_DOM.analyze(q).fires; } catch(_){}
+          return fires
+            ? { blocked:true, at:1, why:"Tags may survive; handlers never do. Both vectors lose their on* attribute at the same line." }
+            : { blocked:false, at:null, why:"Harmless markup — the allowlist passes it." }; } },
       { id:"strip-script", label:"Strip <script> pairs", code:'fragment = fragment.replace(/<script[\\s\\S]*?<\\/script>/gi, "")',
         apply(q){ const cleaned = q.replace(/<script[\s\S]*?<\/script\s*>/gi, "");
           let fires = false; try { fires = LAB_DOM.analyze(cleaned).fires; } catch(_){ fires = false; }
@@ -2557,7 +2573,10 @@ const LAB_WAF = {
     ],
     options:[
       { id:"origin-escape", label:"Escape the reflection at the origin", code:"return render('search.html', q=escape(q))",
-        apply(){ return { blocked:true, at:4, why:"Whatever slips the edge now renders as text. The WAF becomes irrelevant — this is the only patch that makes the edge's job optional." }; } },
+        apply(q){ let fires = false; try { fires = LAB_WAF.analyze(q).fires; } catch(_){}
+          return fires
+            ? { blocked:true, at:4, why:"Whatever slips the edge now renders as text. The WAF becomes irrelevant — this is the only patch that makes the edge's job optional." }
+            : { blocked:false, at:null, why:"Served normally — markup that can't self-fire renders just like before." }; } },
       { id:"extend-blocklist", label:"Extend the WAF blocklist (svg, details)", code:"deny <svg, <details, <iframe …",
         apply(q){ return /<body\b/i.test(q)
           ? { blocked:false, at:5, why:"svg and details die — and <body onload> was next. You added three tags to a list the HTML grammar answers with infinity. This is whack-a-mole, and the mole has the schedule." }
@@ -2860,7 +2879,9 @@ const LAB_IDOR = {
           ? { blocked:false, at:null, why:"Your own row — served, as it should be." }
           : { blocked:true, at:4, why:"The query can no longer see rows you don't own — both vectors return empty, for every id, forever." }; } },
       { id:"uuid", label:"Switch ids to random UUIDs", code:"id = uuid4()   # 2^122 guesses per row",
-        apply(){ return { blocked:true, at:6, why:"Enumeration needs guessable keys; a v4 UUID is 5.3×10^36 tries per row. The check is still missing — but nobody can name the row. (If an id ever leaks once, this buys nothing: leaks are forever.)" }; } },
+        apply(q){ return String(q).trim() === "1001"
+          ? { blocked:false, at:null, why:"Your own row — a UUID serves it exactly like an int." }
+          : { blocked:true, at:6, why:"Enumeration needs guessable keys; a v4 UUID is 5.3×10^36 tries per row. The check is still missing — but nobody can name the row. (If an id ever leaks once, this buys nothing: leaks are forever.)" }; } },
       { id:"hide-ui", label:"Hide other accounts in the UI", code:"// the account picker only lists your own",
         apply(){ return { blocked:false, at:2, why:"The API never cared what the UI lists. GET /api/account?id=1002 still answers — you moved a menu, not the boundary." }; } },
       { id:"ratelimit", label:"Rate-limit account lookups", code:"3 requests/second per session",
@@ -3558,11 +3579,15 @@ const LAB_JWT = {
     ],
     options:[
       { id:"verify", label:"Verify the signature", code:"payload = jwt.decode(token, SECRET, algorithms=['hs256'])",
-        apply(){ return { blocked:true, at:4, why:"The forged tokens were never signed — verification fails before a single claim is read. This is the fix; everything else is scenery." }; } },
+        apply(q){ return String(q).trim() === "user"
+          ? { blocked:false, at:null, why:"Your own, correctly-signed token — verified and served." }
+          : { blocked:true, at:4, why:"The forged tokens were never signed — verification fails before a single claim is read. This is the fix; everything else is scenery." }; } },
       { id:"alg-pin", label:"Reject alg=none, pin hs256", code:'if header.alg != "hs256": reject',
         apply(){ return { blocked:false, at:4, why:"Read the vulnerable code again: no signature of ANY algorithm is checked — decode only. There is no verification step to pin. This patch changes nothing about the actual bug." }; } },
       { id:"session-role", label:"Take the role from the session", code:"role = session.user.role   # not token['role']",
-        apply(){ return { blocked:true, at:5, why:"The token may CLAIM anything; the console checks what the session already knows. Forged claims become suggestions." }; } },
+        apply(q){ return String(q).trim() === "user"
+          ? { blocked:false, at:null, why:"The session knows your role — nothing to override." }
+          : { blocked:true, at:5, why:"The token may CLAIM anything; the console checks what the session already knows. Forged claims become suggestions." }; } },
       { id:"long-secret", label:"Rotate to a 64-char secret", code:'SECRET = "x".repeat(64)',
         apply(){ return { blocked:false, at:4, why:"Key length polices brute force against a verification that does not exist. The unsigned token still decodes; the role still sticks." }; } }
     ]
@@ -3872,19 +3897,23 @@ const LAB_SSRF = {
     ],
     options:[
       { id:"allowlist", label:"Allowlist public image hosts", code:'ALLOW = ["images.aperture.cdn"]\\nif (host of url) not in ALLOW: refuse',
-        apply(){ return { blocked:true, at:4, why:"The fetcher only ever talks to the CDN. Every spelling of every internal address dies at the same line — this is the strongest SSRF fix there is." }; } },
+        apply(q){ return /images\.aperture\.cdn/i.test(String(q))
+          ? { blocked:false, at:null, why:"The CDN host — imported, resized, same as always." }
+          : { blocked:true, at:4, why:"The fetcher only ever talks to the CDN. Every spelling of every internal address dies at the same line — this is the strongest SSRF fix there is." }; } },
       { id:"post-resolve", label:"Resolve, then classify the IP", code:"ip = dns.resolve(host)\\nif is_internal(ip): refuse",
-        apply(q){ const m = /^(?:https?:\/\/)?(?:[^@/]+@)?(?:([^:/]+))/i.exec(String(q).trim());
-          const host = (m && m[1]) || "";
-          let ip = host; try { const c = parseIPv4(host); if (c) ip = c.ip; } catch(_){}
-          return { blocked:true, at:4, why:"The resolver reads the number, not the spelling: 2852039166, 0xA9FEA9FE and evil.example@… all collapse to 169.254.169.254 before the classifier says link-local. (DNS rebinding is this fix's real-world footnote — pin the IP you checked.)" }; } },
+        apply(q){ let internal = false; try { internal = !!LAB_SSRF.analyze(q).internal; } catch(_){}
+          return internal
+            ? { blocked:true, at:4, why:"The resolver reads the number, not the spelling: 2852039166, 0xA9FEA9FE and evil.example@… all collapse to 169.254.169.254 before the classifier says link-local. (DNS rebinding is this fix's real-world footnote — pin the IP you checked.)" }
+            : { blocked:false, at:null, why:"A public host — fetched and imported normally." }; } },
       { id:"blocklist", label:"Blocklist the strings", code:'deny /169\\.254|127\\.0\\.0\\.1|localhost|^10\\./ in the URL',
         apply(q){ const s = String(q);
           return /169\.254|127\.0\.0\.1|localhost|^10\./.test(s)
             ? { blocked:true, at:3, why:"Blocked — this spelling matched. Savor it: it's the only one of four that did." }
             : { blocked:false, at:4, why:"The blocklist read the spelling; the resolver read the number. 2852039166 IS 169.254.169.254, and the @dress hides it twice over. The request sails through and the keys ship out." }; } },
       { id:"imdsv2", label:"Require a metadata session token", code:"# cloud-init: HttpTokens=required (IMDSv2)",
-        apply(){ return { blocked:true, at:5, why:"The requests still arrive — and the metadata service answers them with nothing. A token the import-fetcher never sends is now required for every response. Defense in depth done right." }; } }
+        apply(q){ return /\/meta-data\//i.test(String(q))
+          ? { blocked:true, at:5, why:"The requests still arrive — and the metadata service answers them with nothing. A token the import-fetcher never sends is now required for every response. Defense in depth done right." }
+          : { blocked:false, at:null, why:"The image imported fine — IMDSv2 changed who the metadata service talks to, nothing else." }; } }
     ]
   },
 
@@ -4176,7 +4205,9 @@ const LAB_CMDI = {
     ],
     options:[
       { id:"argv", label:"Argv array, no shell", code:`out = subprocess.run(["ping","-c1", host], capture_output=True)`,
-        apply(q){ return { blocked:true, at:4, why:"No shell is invoked at all — your bytes arrive as ping's single argv entry, operators included." }; } },
+        apply(q){ return shellScan(String(q))
+          ? { blocked:true, at:4, why:"No shell is invoked at all — your operators arrive as ping's single argv entry. Data forever, whatever they spell." }
+          : { blocked:false, at:null, why:"A plain ping — argv arrays run honest commands all day." }; } },
       { id:"allowlist", label:"Hostname allowlist", code:`if not re.fullmatch(r"[A-Za-z0-9.-]+", host): abort(400)`,
         apply(q){ return /^[A-Za-z0-9.-]+$/.test(q)
           ? { blocked:false, at:null, why:"This input is a legal hostname — but it contains no operator, so the ping is all that runs." }
@@ -4184,7 +4215,7 @@ const LAB_CMDI = {
       { id:"quote", label:"Wrap the input in quotes", code:`os.system(f'ping -c1 "{host}"')`,
         apply(q){ return q.includes('"')
           ? { blocked:false, at:5, why:"A \" in the input closes the server's own quote — everything after it is shell source again." }
-          : { blocked:true, at:5, why:"Inside double quotes your bytes are one argument… which holds for exactly these vectors. It is a shield that shatters on one character — don't ship it." }; } },
+          : { blocked:false, at:null, why:"Inside double quotes your bytes are one argument — the ping resolves or fails, nothing more. It holds for exactly these vectors. It is a shield that shatters on one character — don't ship it." }; } },
       { id:"strip", label:"Strip dangerous operators", code:"host = re.sub(\"[;&|`\\n\", \"\", host)",
         apply(q){ const cleaned = q.replace(/[;&|`\n]/g, "");
           return cleaned === q
@@ -4522,11 +4553,20 @@ const LAB_CSRF = {
     ],
     options:[
       { id:"token", label:"Per-session CSRF token", code:`<input type="hidden" name="csrf" value="{{ session.csrf }}">\n…\nif request.form["csrf"] != session.csrf: abort(403)`,
-        apply(){ return { blocked:true, at:4, why:"The evil page would need the token's VALUE — and reading bank.aperture.lab's DOM from another origin is exactly what the same-origin policy forbids. All three vectors die at the same line." }; } },
+        apply(q){ let fires = false; try { fires = csrfScan(q).fires; } catch(_){}
+          return fires
+            ? { blocked:true, at:4, why:"The evil page would need the token's VALUE — and reading bank.aperture.lab's DOM from another origin is exactly what the same-origin policy forbids. All three vectors die at the same line." }
+            : { blocked:false, at:null, why:"A page with no forged request — nothing to stop, nothing stopped." }; } },
       { id:"samesite", label:"SameSite=Strict cookie", code:`Set-Cookie: session=…; Secure; HttpOnly; SameSite=Strict`,
-        apply(){ return { blocked:true, at:2, why:"Strict means the cookie is never attached to any cross-site request — script-submit, handler-submit or synthetic click. The POST arrives anonymous and bounces off @login_required." }; } },
+        apply(q){ let fires = false; try { fires = csrfScan(q).fires; } catch(_){}
+          return fires
+            ? { blocked:true, at:2, why:"Strict means the cookie is never attached to any cross-site request — script-submit, handler-submit or synthetic click. The POST arrives anonymous and bounces off @login_required." }
+            : { blocked:false, at:null, why:"No forged POST in it — the page renders, nothing is sent." }; } },
       { id:"origin", label:"Verify Origin header server-side", code:`if request.headers.get("Origin") not in ALLOWED_ORIGINS: abort(403)`,
-        apply(){ return { blocked:true, at:4, why:"Browsers set Origin on cross-site POSTs and pages cannot forge it. attacker.example is not in the list — 403 for all three vectors. (Add a same-site-GET fallback for old browsers and this holds.)" }; } },
+        apply(q){ let fires = false; try { fires = csrfScan(q).fires; } catch(_){}
+          return fires
+            ? { blocked:true, at:4, why:"Browsers set Origin on cross-site POSTs and pages cannot forge it. attacker.example is not in the list — 403 for all three vectors. (Add a same-site-GET fallback for old browsers and this holds.)" }
+            : { blocked:false, at:null, why:"Nothing cross-site here — fine." }; } },
       { id:"https", label:"Secure + HttpOnly cookie flags", code:`Set-Cookie: session=…; Secure; HttpOnly`,
         apply(){ return { blocked:false, at:4, why:"Good hygiene — against a DIFFERENT attack. The victim's browser is on HTTPS; the cookie is attached with full honors; the flags say nothing about who asked for the request." }; } },
       { id:"amount", label:"Validate the amount server-side", code:`amount = int(request.form["amount"])\nassert 0 < amount <= 5000`,
@@ -5036,27 +5076,29 @@ function effLayerState(i, a){
   }
   return s;
 }
-function patchedSurface(a){
+function patchedApp(a){
   const p = state.patched, opt = activePatch();
   if (opt && typeof opt.respond === "function"){
     try { const out = opt.respond(a, state.q); if (typeof out === "string") return out; } catch(_){}
   }
-  const http = !LAB.wire || !["fragment", "offline"].includes(LAB.wire.type);
-  if (http) return `<div class="applayer"><div class="patchresp">
-    <div class="pr-status">HTTP/1.1 403 Forbidden</div>
-    <div class="pr-title">✓ The patch held.</div>
-    <div class="pr-msg">This request never completed — <b>${esc(opt ? opt.label : "the patch")}</b> stopped it at L${p.at}.</div>
-    <div class="pr-why">${p.why || ""}</div></div></div>`;
-  return `<div class="applayer"><div class="patchresp client">
-    <div class="pr-title">✓ The patch held.</div>
-    <div class="pr-msg">No request was ever going to save you here — the fix lives in the client, and it stopped your payload at L${p.at}.</div>
-    <div class="pr-why">${p.why || ""}</div></div></div>`;
+  const w = LAB.wire || {};
+  const label = LAB.consoleLabel || "Input";
+  const path = (w.path || "/") + (w.param ? "?" + w.param + "=…" : "");
+  const body = `<h1 class="s-h">${esc(clip(LAB.title, 40))}</h1>
+    <p class="s-sub">patched build · ${esc(opt ? opt.label : "")}</p>
+    ${field(label, state.q, "Send", "")}
+    <div style="margin-top:14px"><div class="patchheld">
+      <div class="ph-t">✓ Nothing fired.</div>
+      <div class="ph-m">You sent <code>${esc(clip(state.q, 44))}</code> — and the app just did its job. <b>${esc(opt ? opt.label : "the patch")}</b> stopped it at L${p.at}: ${p.why || ""}</div>
+      <div class="ph-p">The surface is still live — tweak the payload and send again. If anything <em>does</em> fire, that's a bypass, and the verdict will say so.</div>
+    </div></div>`;
+  return `<div class="applayer">${siteFrame({ path, search:false, body })}</div>`;
 }
 function renderPlane(i){
   const p = planes[i];
   if (!p || i >= LAB.layers.length) return;   // a pending fill may outlive a lab switch
   if (i === 0 && state.patched && state.patched.blocked)
-    p.querySelector(".pbody").innerHTML = patchedSurface(state.analysis);
+    p.querySelector(".pbody").innerHTML = patchedApp(state.analysis);
   else
     p.querySelector(".pbody").innerHTML = LAB.render[i](state.analysis);
   planeDirty[i] = false;
@@ -5240,7 +5282,7 @@ function refreshDefense(a){
   else if (!p.dfp){ p.dfp = dfp; saveProg(); }
   const opt = state.deployedPatch ? D.options.find(o => o.id === state.deployedPatch) : null;
 
-  let inner = `<p class="defnote">${state.deployedPatch && opt ? "Patch <b>deployed</b> — the app is running it. Fire payloads at the surface above: blocked requests die at their layer; anything that still burns is a bypass." : "The vulnerable build is live — fire any payload, then pick the patch that should stop it. A patch counts only when <b>every vector dies</b>."}</p>`;
+  let inner = `<p class="defnote">${state.deployedPatch && opt ? "Patch <b>deployed</b> — the app above runs it. Honest traffic flows normally; attacks stop with the reason. Now try to break your own fix — anything that still fires is a bypass." : "The vulnerable build is live — fire any payload, then pick the patch that should stop it. A patch counts only when <b>every vector dies</b>."}</p>`;
   if (!opt){
     inner += D.options.map(o => `<button class="dopt" data-opt="${esc(o.id)}"><b>${esc(o.label)}</b><code>${esc(o.code)}</code></button>`).join("");
     el("labview").classList.remove("defended");
@@ -5736,7 +5778,7 @@ ${defending ? "" : `    <section class="notes">
   <p>Every lab carries <b>objectives</b> in the side rail — phases of the actual attack, from “break the literal” to “exfiltrate the table.” You complete them by making the engine say so, which means <em>typing the payload yourself</em> (or editing the raw request — more on that below). Hints reveal progressively, rung by rung, and the final rung shows the payload — but a solve earned that way is labeled. The preset that completes the final objective stays locked until you've solved the lab. Progress persists in your browser.</p>
 
   <h3>Now in two directions</h3>
-  <p>The <b>Attacker</b> tab is the classic STRATA: type the payload, watch it cross. The <b>Defender</b> tab flips every lab that carries defense data: deploy a candidate patch — parameterize the query, escape the output, check the owner, verify the signature — and it is <em>actually applied</em>: the surface starts refusing blocked requests, the blocking layer turns green, everything below it goes cold. Then try to break your own fix; if a payload still burns through, the verdict says <b>bypassed</b>. The engine also runs the full attack battery against your choice — a patch only counts when every vector dies, and the tempting non-fixes (hide the errors, add LIMIT 1, put quotes around it) fail on screen, with the reason.</p>
+  <p>The <b>Attacker</b> tab is the classic STRATA: type the payload, watch it cross. The <b>Defender</b> tab flips every lab that carries defense data: deploy a candidate patch — parameterize the query, escape the output, check the owner, verify the signature — and it is <em>actually applied</em>: honest traffic keeps flowing, attacks die at their layer (the surface stays live so you can keep probing), and if a payload still burns through, the verdict says <b>bypassed</b>. The engine also runs the full attack battery against your choice — a patch only counts when every vector dies, and the tempting non-fixes (hide the errors, add LIMIT 1, put quotes around it) fail on screen, with the reason.</p>
 
   <h3>The one rule that makes it teach</h3>
   <p>Every byte that originated from the student is drawn in <b style="color:var(--taint)">amber</b>, at every layer, without exception. Nothing else in the interface is warm. You track your own payload from keystroke to query string to parser to DOM without being told where to look — and the moment amber stops being <em>data</em> and becomes <em>syntax</em> (SQL) or <em>markup</em> (HTML) is visible, not narrated.</p>

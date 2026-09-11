@@ -13,7 +13,7 @@
     {
       "id": "xss-waf-plus",
       "file": "xss-waf-plus.lab.js",
-      "sha256": "4635ab0f06e8da290c6a1e1a1c658995b9436d572149381cb45277d8af69cd9e",
+      "sha256": "de4da00ab04d99701dd7d6fbd3732392434a71c6dac8082c456f5f18ae10ceee",
       "title": "Reflected XSS when every obvious tag is blocked",
       "difficulty": "Practitioner",
       "blurb": "script, img, svg and iframe are all banned. The HTML grammar has 110+ elements — details open ontoggle never read the list. Ships with a defender edition."

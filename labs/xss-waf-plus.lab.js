@@ -127,7 +127,10 @@ STRATA.registerLab({
     ],
     options:[
       { id:"origin-escape", label:"Escape the reflection at the origin", code:"return render('search.html', q=escape(q))",
-        apply(){ return { blocked:true, at:4, why:"Whatever slips the edge now arrives at the tokenizer pre-neutralized — &lt;details&gt; is visible text. Both vectors die at the same line, and the WAF becomes optional." }; } },
+        apply(q){ let fires = false; try { fires = scanVectors(String(q), "parser").some(v => v.fires); } catch(_){}
+          return fires
+            ? { blocked:true, at:4, why:"Whatever slips the edge now arrives at the tokenizer pre-neutralized — &lt;details&gt; is visible text. Both vectors die at the same line, and the WAF becomes optional." }
+            : { blocked:false, at:null, why:"Served normally — text and harmless markup render exactly as before." }; } },
       { id:"add-details", label:"Add <details> to the blocklist", code:"deny <script|img|svg|iframe|object|embed|details",
         apply(q){ return /<details\b/i.test(q)
           ? { blocked:true, at:3, why:"details dies — and <body onload> never needed it. The list grew by one; the grammar didn't shrink." }
