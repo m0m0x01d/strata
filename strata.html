@@ -1,23 +1,3 @@
-/* ── PATCHED LENS + SEVERITY ───────────────────────────────────── */
-.patchresp{margin:10px auto;max-width:620px;border:1px solid color-mix(in srgb,var(--ok) 45%,var(--rule));border-radius:10px;
-  background:var(--strata);padding:18px 20px;font-family:var(--mono)}
-.pr-status{font:600 11px/1 var(--mono);letter-spacing:.1em;color:var(--breach);margin-bottom:10px}
-.patchresp .pr-title{font:700 17px/1.3 var(--sans);color:var(--ok);margin-bottom:8px}
-.pr-msg{font:12.5px/1.55 var(--sans);color:var(--ink)}
-.pr-why{font:11.5px/1.55 var(--sans);color:var(--dim);margin-top:10px;border-top:1px solid var(--rule);padding-top:10px}
-.patchresp.client .pr-status{display:none}
-.plane.st-clean .pbody{opacity:.38;filter:saturate(.5)}
-.plane.st-clean .phead{opacity:.5}
-.plane.st-clean{outline:1px dashed color-mix(in srgb,var(--ok) 22%,transparent);outline-offset:-2px}
-.vrow.patch .k{color:var(--ok)}
-.sev{font:700 8.5px/1 var(--mono);letter-spacing:.09em;border-radius:3px;padding:2.5px 6px}
-.sev.crit{background:var(--breach-wash);color:var(--breach);border:1px solid color-mix(in srgb,var(--breach) 45%,transparent)}
-.sev.high{background:var(--taint-wash);color:var(--taint);border:1px solid var(--taint-edge)}
-.sev.med{color:var(--signal);border:1px solid color-mix(in srgb,var(--signal) 40%,transparent)}
-.sev.low{color:var(--dim);border:1px solid var(--rule)}
-.modetag{color:var(--ok);border:1px solid color-mix(in srgb,var(--ok) 45%,transparent);border-radius:3px;
-  font-size:8.5px;letter-spacing:.12em;padding:2px 6px;text-transform:uppercase}
-
 <!doctype html>
 <meta charset="utf-8">
 <title>STRATA — web vulnerabilities in cross-section</title>
@@ -1184,6 +1164,26 @@ select.labsel option{background:var(--strata); color:var(--ink)}
 .labcard.solved{border-color:color-mix(in srgb,var(--ok) 45%,var(--rule))}
 .labcard.solved .lc-go{color:var(--ok)}
 .labcard.solved:hover{border-color:var(--ok)}
+
+/* ── PATCHED LENS + SEVERITY ───────────────────────────────────── */
+.patchresp{margin:10px auto;max-width:620px;border:1px solid color-mix(in srgb,var(--ok) 45%,var(--rule));border-radius:10px;
+  background:var(--strata);padding:18px 20px;font-family:var(--mono)}
+.pr-status{font:600 11px/1 var(--mono);letter-spacing:.1em;color:var(--breach);margin-bottom:10px}
+.patchresp .pr-title{font:700 17px/1.3 var(--sans);color:var(--ok);margin-bottom:8px}
+.pr-msg{font:12.5px/1.55 var(--sans);color:var(--ink)}
+.pr-why{font:11.5px/1.55 var(--sans);color:var(--dim);margin-top:10px;border-top:1px solid var(--rule);padding-top:10px}
+.patchresp.client .pr-status{display:none}
+.plane.st-clean .pbody{opacity:.38;filter:saturate(.5)}
+.plane.st-clean .phead{opacity:.5}
+.plane.st-clean{outline:1px dashed color-mix(in srgb,var(--ok) 22%,transparent);outline-offset:-2px}
+.vrow.patch .k{color:var(--ok)}
+.sev{font:700 8.5px/1 var(--mono);letter-spacing:.09em;border-radius:3px;padding:2.5px 6px}
+.sev.crit{background:var(--breach-wash);color:var(--breach);border:1px solid color-mix(in srgb,var(--breach) 45%,transparent)}
+.sev.high{background:var(--taint-wash);color:var(--taint);border:1px solid var(--taint-edge)}
+.sev.med{color:var(--signal);border:1px solid color-mix(in srgb,var(--signal) 40%,transparent)}
+.sev.low{color:var(--dim);border:1px solid var(--rule)}
+.modetag{color:var(--ok);border:1px solid color-mix(in srgb,var(--ok) 45%,transparent);border-radius:3px;
+  font-size:8.5px;letter-spacing:.12em;padding:2px 6px;text-transform:uppercase}
 
 /* ── COMMUNITY SHELF ───────────────────────────────────────────── */
 .shelfnote{font-size:12px;color:var(--dim);line-height:1.55;margin:8px 0 14px}
