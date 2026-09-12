@@ -105,6 +105,8 @@ Because a lab is data, the catalog is open-ended. Hand [`docs/AI-LAB-BRIEF.md`](
 >
 > 🛡️ **"We got this finding — make an attack *and* defense lab so the team gets it."** → a full lab plus a Defender edition where the wrong fixes your team proposed fail on screen.
 
+<div align="center"><br><img src="docs/img/infinite-lab.gif" alt="Handing a bug report to Claude with the AI-LAB-BRIEF.md instructions attached: 'Make me a lab from this report', Claude writes and validates a new lab file, and it's immediately playable in the STRATA cross-section." width="760"><br><sub>*Point an AI at [`docs/AI-LAB-BRIEF.md`](docs/AI-LAB-BRIEF.md), hand it a report, and get a validated, playable lab back — same instrument, new bug.*</sub><br><br></div>
+
 The two newest community labs — [`ssti-jinja`](labs/ssti-jinja.lab.js) (SSTI → RCE) and [`blind-sqli`](labs/blind-sqli.lab.js) (boolean-oracle password extraction) — were built exactly this way.
 
 ---
